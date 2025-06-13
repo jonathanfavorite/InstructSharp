@@ -1,10 +1,11 @@
 ﻿using InstructSharp.Core;
 using InstructSharp.Interfaces;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 
 namespace InstructSharp.Clients;
-public abstract class BaseLLMClient<TLLMRequest> : ILLMClient<TLLMRequest>
+public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class, ILLMRequest, new()
 {
     protected readonly HttpClient _httpClient;
     protected readonly HttpConfiguration _config;
@@ -36,11 +37,22 @@ public abstract class BaseLLMClient<TLLMRequest> : ILLMClient<TLLMRequest>
     }
 
     protected abstract void ConfigureHttpClient();
-    protected abstract object TransformRequest<T>(TLLMRequest request);
+    protected abstract object TransformRequest<T>(TRequest request);
     protected abstract LLMResponse<T> TransformResponse<T>(string jsonResponse);
     protected abstract string GetEndpoint();
 
-    public virtual async Task<LLMResponse<T>> QueryAsync<T>(TLLMRequest request)
+    public Task<LLMResponse<T>> QueryAsync<T>(string instructions, string? input = null)
+    {
+        var req = new TRequest
+        {
+            Model = _config.Model,
+            Instructions = instructions,
+            Input = input
+        };
+        return QueryAsync<T>(req);
+    }
+
+public virtual async Task<LLMResponse<T>> QueryAsync<T>(TRequest request)
     {
         var providerRequest = TransformRequest<T>(request);
         var json = JsonSerializer.Serialize(providerRequest, _jsonOptions);

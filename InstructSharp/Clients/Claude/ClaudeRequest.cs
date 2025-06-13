@@ -1,11 +1,12 @@
-﻿using System;
+﻿using InstructSharp.Interfaces;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace InstructSharp.Clients.Claude;
-public class ClaudeRequest
+public class ClaudeRequest : ILLMRequest
 {
     public string Model { get; set; } = "gpt-4o-mini";
     public double Temperature { get; set; } = 0.7;

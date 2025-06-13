@@ -1,5 +1,6 @@
 ﻿using InstructSharp.Core;
 using InstructSharp.Helpers;
+using InstructSharp.Interfaces;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -36,7 +37,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             return new
             {
                 model = request.Model,
-                instructions = request.Instruction,
+                instructions = request.Instructions,
                 input = request.Input,
                 temperature = request.Temperature
             };
@@ -49,7 +50,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         return new
         {
             model = request.Model,
-            instructions = request.Instruction,
+            instructions = request.Instructions,
             input = request.Input,
             temperature = request.Temperature,
             text = new
