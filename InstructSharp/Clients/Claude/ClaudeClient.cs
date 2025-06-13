@@ -1,6 +1,7 @@
 ﻿using InstructSharp.Clients.Claude;
 using InstructSharp.Core;
 using InstructSharp.Helpers;
+using InstructSharp.Types;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -28,6 +29,7 @@ public class ClaudeClient : BaseLLMClient<ClaudeRequest>
         _httpClient.DefaultRequestHeaders.Add("anthropic-version", $"{ClaudeConstants.AnthripicVersion}");
     }
 
+    public override LLMProvider GetLLMProvider() => LLMProvider.Claude;
     protected override string GetEndpoint() => "messages";
 
     protected override object TransformRequest<T>(ClaudeRequest request)
@@ -46,6 +48,14 @@ public class ClaudeClient : BaseLLMClient<ClaudeRequest>
         // if you need schema formatting, add it
         if (typeof(T) != typeof(string))
         {
+
+            var combined = string.Join("\n\n", new[]
+            {
+                request.Instructions.Trim(),
+                "Input:" + request.Input.Trim(),
+                "Please invoke the responseSchema tool to emit JSON matching the schema."
+            });
+
             var schemaJson = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
             var schemaNode = JsonNode.Parse(schemaJson);
 
@@ -66,7 +76,7 @@ public class ClaudeClient : BaseLLMClient<ClaudeRequest>
                     new 
                     {
                         role = "user", 
-                        content = request.Instructions + "\n\nCall the responseSchema tool for output." 
+                        content = combined
                     }
                 }
             };

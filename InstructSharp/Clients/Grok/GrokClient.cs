@@ -1,6 +1,7 @@
 ﻿using InstructSharp.Clients.Grok;
 using InstructSharp.Core;
 using InstructSharp.Helpers;
+using InstructSharp.Types;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -28,6 +29,7 @@ public class GrokClient : BaseLLMClient<GrokRequest>
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
     }
 
+    public override LLMProvider GetLLMProvider() => LLMProvider.Grok;
     protected override string GetEndpoint() => "chat/completions";
 
     protected override object TransformRequest<T>(GrokRequest request)

@@ -1,5 +1,6 @@
 ﻿using InstructSharp.Core;
 using InstructSharp.Helpers;
+using InstructSharp.Types;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -26,6 +27,7 @@ public class DeepSeekClient : BaseLLMClient<DeepSeekRequest>
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
     }
 
+    public override LLMProvider GetLLMProvider() => LLMProvider.DeepSeek;
     protected override string GetEndpoint() => "chat/completions";
 
     protected override object TransformRequest<T>(DeepSeekRequest request)

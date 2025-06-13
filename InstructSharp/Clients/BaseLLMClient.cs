@@ -1,5 +1,6 @@
 ﻿using InstructSharp.Core;
 using InstructSharp.Interfaces;
+using InstructSharp.Types;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -16,7 +17,9 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
         _config = config ?? throw new ArgumentNullException(nameof(config));
         
         _httpClient = httpClient ?? new HttpClient();
-        if(!_config.SetupBaseUrlAfterConstructor)
+
+        // Only set base address if we're not using URL patterns or delayed setup
+        if (!_config.SetupBaseUrlAfterConstructor && string.IsNullOrEmpty(_config.UrlPattern))
         {
             _httpClient.BaseAddress = new Uri(_config.BaseUrl);
         }
@@ -36,10 +39,23 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
         ConfigureHttpClient();
     }
 
+    public abstract LLMProvider GetLLMProvider();
     protected abstract void ConfigureHttpClient();
     protected abstract object TransformRequest<T>(TRequest request);
     protected abstract LLMResponse<T> TransformResponse<T>(string jsonResponse);
     protected abstract string GetEndpoint();
+
+    protected virtual string BuildRequestUrl(string model)
+    {
+        if (!string.IsNullOrEmpty(_config.UrlPattern))
+        {
+            // Replace {model} placeholder in URL pattern
+            return _config.UrlPattern.Replace("{model}", model);
+        }
+
+        // Default behavior - use base URL + endpoint
+        return GetEndpoint();
+    }
 
     public Task<LLMResponse<T>> QueryAsync<T>(string instructions, string? input = null)
     {
@@ -52,17 +68,39 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
         return QueryAsync<T>(req);
     }
 
-public virtual async Task<LLMResponse<T>> QueryAsync<T>(TRequest request)
+    public async Task<LLMResponse<T>> QueryAsync<T>(ILLMRequest request)
+    {
+        if (request is not TRequest typed)
+            throw new InvalidCastException(
+                $"Expected a {typeof(TRequest).Name}, got {request.GetType().Name}");
+        return await QueryAsync<T>(typed);
+    }
+
+    public virtual async Task<LLMResponse<T>> QueryAsync<T>(TRequest request)
     {
         var providerRequest = TransformRequest<T>(request);
         var json = JsonSerializer.Serialize(providerRequest, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        var response = await _httpClient.PostAsync(GetEndpoint(), content);
+        // Build the request URL with the model
+        var requestUrl = BuildRequestUrl(request.Model);
+
+        HttpResponseMessage response;
+        if (!string.IsNullOrEmpty(_config.UrlPattern))
+        {
+            // For URL patterns, use absolute URL
+            response = await _httpClient.PostAsync(requestUrl, content);
+        }
+        else
+        {
+            // For standard base URL + endpoint
+            response = await _httpClient.PostAsync(requestUrl, content);
+        }
 
         if (!response.IsSuccessStatusCode)
         {
-            string error = await response.Content.ReadAsStringAsync();
+            // for debugging the error
+            //string error = await response.Content.ReadAsStringAsync();
         }
         response.EnsureSuccessStatusCode();
 

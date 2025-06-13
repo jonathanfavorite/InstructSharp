@@ -2,6 +2,7 @@
 using InstructSharp.Clients.LLama;
 using InstructSharp.Core;
 using InstructSharp.Helpers;
+using InstructSharp.Types;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -29,6 +30,7 @@ public class LLamaClient : BaseLLMClient<LLamaRequest>
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
     }
 
+    public override LLMProvider GetLLMProvider() => LLMProvider.LLama;
     protected override string GetEndpoint() => "openai/chat/completions";
 
     protected override object TransformRequest<T>(LLamaRequest request)

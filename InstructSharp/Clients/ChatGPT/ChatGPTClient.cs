@@ -1,6 +1,7 @@
 ﻿using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Interfaces;
+using InstructSharp.Types;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -28,6 +29,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
     }
 
+    public override LLMProvider GetLLMProvider() => LLMProvider.ChatGPT;
     protected override string GetEndpoint() => "responses";
 
     protected override object TransformRequest<T>(ChatGPTRequest request)
