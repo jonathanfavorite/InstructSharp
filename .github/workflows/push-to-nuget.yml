@@ -24,11 +24,13 @@ jobs:
 
       - name: Pack
         run: |
+          # take first 8 chars of the SHA to keep the version string short
+          SHA8=${GITHUB_SHA:0:8}
           dotnet pack \
             --configuration Release \
             --no-build \
             --output ./nupkgs \
-            /p:PackageVersion=1.0.${{ github.run_number }}-${{ github.sha }}
+            /p:PackageVersion=1.0.${GITHUB_RUN_NUMBER}-$SHA8
 
       - name: Push
         env:
