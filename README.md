@@ -1,4 +1,15 @@
-**InstructSharp**
+![InstructSharp Banner](assets/banner.jpg)
+
+# InstructSharp
+
+**InstructSharp** is your go-to .NET library for seamless, provider-agnostic LLM integrations. Whether you’re working with ChatGPT, Claude, Gemini, Grok, DeepSeek or LLaMA, InstructSharp wraps every call in a consistent `QueryAsync<T>` pattern and returns crisp, structured JSON objects 📦✨. Just define your POCO schema, pick your model, and you’re ready to 🚀:
+
+- 🔌 **Multi-provider support**: OpenAI, Anthropic, Google, X.AI, DeepSeek & more  
+- 🔖 **Type-safe outputs**: Deserialize straight into your custom classes  
+- ⚙️ **Fully configurable**: Tweak temperature, max_tokens, and other settings  
+- 🛠️ **Minimal setup**: Install via NuGet & start querying in minutes  
+
+Crafted for clarity and speed, **InstructSharp** turns advanced AI workflows into everyday dev tasks 🎯👍.
 
 ---
 
