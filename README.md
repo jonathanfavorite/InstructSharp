@@ -1,5 +1,4 @@
 **InstructSharp**
-*Effortless, provider-agnostic LLM integration with structured JSON outputs*
 
 ---
 
