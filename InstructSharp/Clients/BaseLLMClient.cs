@@ -1,9 +1,10 @@
 ﻿using InstructSharp.Core;
+using InstructSharp.Interfaces;
 using System.Text;
 using System.Text.Json;
 
 namespace InstructSharp.Clients;
-public abstract class BaseLLMClient<TLLMRequest>
+public abstract class BaseLLMClient<TLLMRequest> : ILLMClient<TLLMRequest>
 {
     protected readonly HttpClient _httpClient;
     protected readonly HttpConfiguration _config;
