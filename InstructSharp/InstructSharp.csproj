@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <Version>1.0.1</Version>
     <Authors>Jonathan Favorite</Authors>
-    <PackageIcon>..\..\assets/icon.jpg</PackageIcon>
+    <PackageIcon>..\assets/icon.jpg</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\assets/icon.jpg"
+    <None Include="..\assets/icon.jpg"
           Pack="true"
           PackagePath="\" />
   </ItemGroup>
