@@ -23,15 +23,17 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Pack
-        run: dotnet pack \
-              --configuration Release \
-              --no-build \
-              --output ./nupkgs
+        run: |
+          dotnet pack ./InstructSharp/InstructSharp/InstructSharp.csproj \
+            --configuration Release \
+            --no-build \
+            --output ./nupkgs
 
       - name: Push
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: dotnet nuget push "./nupkgs/*.nupkg" \
-              --api-key $NUGET_API_KEY \
-              --source https://api.nuget.org/v3/index.json \
-              --skip-duplicate
+        run: |
+          dotnet nuget push "./nupkgs/*.nupkg" \
+            --api-key $NUGET_API_KEY \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
