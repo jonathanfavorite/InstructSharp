@@ -1,15 +1,15 @@
-name: Publish NuGet package
+name: Publish NuGet
 
 on:
   push:
     branches: [ master ]
 
 jobs:
-  build-and-publish:
+  publish:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v3
@@ -28,9 +28,9 @@ jobs:
             --configuration Release \
             --no-build \
             --output ./nupkgs \
-            /p:PackageVersion=${{ github.run_number }}.${{ github.sha }} 
+            /p:PackageVersion=1.0.${{ github.run_number }}-${{ github.sha }}
 
-      - name: Publish to nuget.org
+      - name: Push
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
