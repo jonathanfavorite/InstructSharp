@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <Version>1.0.1</Version>
     <Authors>Jonathan Favorite</Authors>
-    <PackageIcon>https://raw.githubusercontent.com/jonathanfavorite/InstructSharp/master/assets/icon.jpg</PackageIcon>
+    <PackageIconUrl>https://raw.githubusercontent.com/jonathanfavorite/InstructSharp/master/assets/icon.jpg</PackageIconUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,11 +14,5 @@
     <PackageReference Include="NJsonSchema" Version="11.3.2" />
     <PackageReference Include="NJsonSchema.NewtonsoftJson" Version="11.3.2" />
   </ItemGroup>
-
-  <ItemGroup>
-    <None Include="https://raw.githubusercontent.com/jonathanfavorite/InstructSharp/master/assets/icon.jpg"
-          Pack="true"
-          PackagePath="\" />
-  </ItemGroup>
-
+  
 </Project>
