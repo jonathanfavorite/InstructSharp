@@ -1,12 +1,11 @@
-﻿using InstructSharp.Clients.Claude;
-using InstructSharp.Core;
+﻿using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Types;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace InstructSharp.Clients.ChatGPT;
+namespace InstructSharp.Clients.Claude;
 public class ClaudeClient : BaseLLMClient<ClaudeRequest>
 {
     public ClaudeClient(string apiKey, HttpClient? httpClient = null)
