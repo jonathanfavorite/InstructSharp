@@ -1,5 +1,6 @@
 ﻿using InstructSharp.Core;
 using InstructSharp.Helpers;
+using InstructSharp.Types;
 using System.IO;
 using System.Net.Http.Headers;
 using System.Reflection;
@@ -9,11 +10,10 @@ using System.Text.Json.Nodes;
 namespace InstructSharp.Clients.Gemini;
 public class GeminiClient : BaseLLMClient<GeminiRequest>
 {
-    public GeminiClient(string apiKey, string model, HttpClient? httpClient = null)
+    public GeminiClient(string apiKey, HttpClient? httpClient = null)
         : base(new HttpConfiguration
         {
-            SetupBaseUrlAfterConstructor = true,
-            Model = model,
+            UrlPattern = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key=" + apiKey,
             ApiKey = apiKey,
             DefaultHeaders = new Dictionary<string, string>
             {
@@ -26,10 +26,9 @@ public class GeminiClient : BaseLLMClient<GeminiRequest>
     protected override void ConfigureHttpClient()
     {
         _httpClient.Timeout = _config.Timeout;
-        _httpClient.BaseAddress 
-            = new Uri($"https://generativelanguage.googleapis.com/v1beta/models/{_config.Model}:generateContent?key={_config.ApiKey}");
     }
 
+    public override LLMProvider GetLLMProvider() => LLMProvider.Gemini;
     protected override string GetEndpoint() => "";
 
     protected override object TransformRequest<T>(GeminiRequest request)

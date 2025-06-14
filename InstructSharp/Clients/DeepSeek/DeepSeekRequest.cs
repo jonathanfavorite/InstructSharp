@@ -1,11 +1,12 @@
-﻿using System;
+﻿using InstructSharp.Interfaces;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace InstructSharp.Clients.DeepSeek;
-public class DeepSeekRequest
+public class DeepSeekRequest : ILLMRequest
 {
     public string Model { get; set; } = DeepSeekModels.DeepSeekChat;
     public string Instructions { get; set; }
