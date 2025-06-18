@@ -1,6 +1,8 @@
-﻿using InstructSharp.Core;
+﻿using InstructSharp.Clients.Claude;
+using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Types;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -72,6 +74,11 @@ public class DeepSeekClient : BaseLLMClient<DeepSeekRequest>
                 type = "json_object"
             }
         };
+    }
+
+    protected override object TransformRequestWithImages<T>(DeepSeekRequest request)
+    {
+        throw new NotSupportedException("Image uploads are not currently supported.");
     }
 
 

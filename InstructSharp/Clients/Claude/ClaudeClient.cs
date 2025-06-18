@@ -1,4 +1,5 @@
-﻿using InstructSharp.Core;
+﻿using InstructSharp.Clients.ChatGPT;
+using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Types;
 using System.Net.Http.Headers;
@@ -82,6 +83,120 @@ public class ClaudeClient : BaseLLMClient<ClaudeRequest>
         }
 
         return basePayload;
+    }
+
+    protected override object TransformRequestWithImages<T>(ClaudeRequest request)
+    {
+        // Common base fields
+        var common = new Dictionary<string, object>
+        {
+            ["model"] = request.Model,
+            ["temperature"] = request.Temperature,
+            ["max_tokens"] = request.MaxTokens,
+            ["system"] = request.Instructions ?? ""
+        };
+
+        // Build user message content: only non-empty blocks
+        var userContents = new List<object>();
+
+        if (!string.IsNullOrWhiteSpace(request.Input))
+        {
+            userContents.Add(new
+            {
+                type = "text",
+                text = request.Input
+            });
+        }
+
+        // Add each image block
+        foreach (var img in request.Images)
+        {
+            if (img.IsBase64)
+            {
+                string base64cleanup = LLMRequestImageHelper.StripBase64Prefix(img.Url);
+                userContents.Add(new
+                {
+                    type = "image",
+                    source = new
+                    {
+                        type = "base64",
+                        media_type = $"image/{img.Base64FileExtension}",  // image/png
+                        data = base64cleanup
+                    }
+                });
+            }
+            else
+            {
+                userContents.Add(new
+                {
+                    type = "image",
+                    source = new
+                    {
+                        type = "url",
+                        media_type = "",
+                        url = img.Url
+                    }
+                });
+            }
+        }
+
+        // messages is always required and must have at least one content block
+        common["messages"] = new[]
+        {
+            new
+            {
+                role    = "user",
+                content = userContents.ToArray()
+            }
+        };
+
+        // If plain-text response desired, return here
+        if (typeof(T) == typeof(string))
+            return common;
+
+
+        // Build combined prompt
+        var combined = string.Join("\n\n", new[]
+        {
+            request.Instructions?.Trim(),
+            !string.IsNullOrWhiteSpace(request.Input)
+                ? "Input: " + request.Input.Trim()
+                : "No text input; see attached images.",
+            "Please invoke the responseSchema tool to emit JSON matching the schema."
+        });
+
+        // Generate JSON schema
+        var schemaJson = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
+        var schemaNode = JsonNode.Parse(schemaJson)!;
+
+        // Define the tool
+        common["tools"] = new[]
+        {
+            new {
+                name         = "responseSchema",
+                description  = "Emit JSON matching the requested schema.",
+                input_schema = schemaNode
+            }
+        };
+
+        // Tell Claude to use it
+        common["tool_choice"] = new
+        {
+            type = "tool",
+            name = "responseSchema"
+        };
+
+        // Replace messages with a single user turn
+        common["messages"] = new[]
+        {
+            new
+            {
+                role    = "user",
+                content = new[] { new { type = "text", text = combined } }
+            }
+        };
+
+        return common;
     }
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)

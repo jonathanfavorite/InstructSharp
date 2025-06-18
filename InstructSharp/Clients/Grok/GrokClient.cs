@@ -1,4 +1,5 @@
-﻿using InstructSharp.Clients.Grok;
+﻿using InstructSharp.Clients.DeepSeek;
+using InstructSharp.Clients.Grok;
 using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Types;
@@ -9,7 +10,7 @@ using System.Text.Json.Nodes;
 namespace InstructSharp.Clients.Grok;
 public class GrokClient : BaseLLMClient<GrokRequest>
 {
-    public GrokClient(string apiKey, HttpClient httpClient = null)
+    public GrokClient(string apiKey, HttpClient? httpClient = null)
         : base(new HttpConfiguration
         {
             BaseUrl = "https://api.x.ai/v1/",
@@ -86,6 +87,11 @@ public class GrokClient : BaseLLMClient<GrokRequest>
                 }
             }
         };
+    }
+
+    protected override object TransformRequestWithImages<T>(GrokRequest request)
+    {
+        throw new NotSupportedException("Image uploads are not currently supported.");
     }
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)

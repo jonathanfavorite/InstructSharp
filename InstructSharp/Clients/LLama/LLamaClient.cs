@@ -1,4 +1,5 @@
 ﻿using InstructSharp.Clients.ChatGPT;
+using InstructSharp.Clients.DeepSeek;
 using InstructSharp.Clients.LLama;
 using InstructSharp.Core;
 using InstructSharp.Helpers;
@@ -80,6 +81,11 @@ public class LLamaClient : BaseLLMClient<LLamaRequest>
                 type = "json_object"
             }
         };
+    }
+
+    protected override object TransformRequestWithImages<T>(LLamaRequest request)
+    {
+        throw new NotSupportedException("Image uploads are not currently supported.");
     }
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)
