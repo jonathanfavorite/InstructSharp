@@ -42,6 +42,7 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
     public abstract LLMProvider GetLLMProvider();
     protected abstract void ConfigureHttpClient();
     protected abstract object TransformRequest<T>(TRequest request);
+    protected abstract object TransformRequestWithImages<T>(TRequest request);
     protected abstract LLMResponse<T> TransformResponse<T>(string jsonResponse);
     protected abstract string GetEndpoint();
 
@@ -63,7 +64,7 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
         {
             Model = _config.Model,
             Instructions = instructions,
-            Input = input
+            Input = input ?? ""
         };
         return QueryAsync<T>(req);
     }
@@ -78,7 +79,16 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
 
     public virtual async Task<LLMResponse<T>> QueryAsync<T>(TRequest request)
     {
-        var providerRequest = TransformRequest<T>(request);
+        object providerRequest;
+        if(request.ContainsImages)
+        {
+            providerRequest = TransformRequestWithImages<T>(request);
+        }
+        else
+        {
+            providerRequest = TransformRequest<T>(request);
+        }
+        
         var json = JsonSerializer.Serialize(providerRequest, _jsonOptions);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -101,6 +111,8 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
         {
             // for debugging the error
             //string error = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Request failed with status code {response.StatusCode}. " +
+                                            $"Response: {await response.Content.ReadAsStringAsync()}");
         }
         response.EnsureSuccessStatusCode();
 

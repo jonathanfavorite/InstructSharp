@@ -1,4 +1,5 @@
-﻿using InstructSharp.Core;
+﻿using InstructSharp.Clients.DeepSeek;
+using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Types;
 using System.IO;
@@ -87,6 +88,11 @@ public class GeminiClient : BaseLLMClient<GeminiRequest>
                 responseJsonSchema = schemaElement
             }
         };
+    }
+
+    protected override object TransformRequestWithImages<T>(GeminiRequest request)
+    {
+        throw new NotSupportedException("Image uploads are not currently supported.");
     }
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)

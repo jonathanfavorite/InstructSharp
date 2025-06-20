@@ -67,6 +67,82 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         };
     }
 
+    protected override object TransformRequestWithImages<T>(ChatGPTRequest request)
+    {
+
+        Dictionary<int, string> qualityDict = new Dictionary<int, string>
+        {
+            { 0, "auto" },
+            { 1, "low" },
+            { 2, "high" },
+            { 3, "high" }
+        };
+
+        // 1) System message content
+        var systemContent = new[]
+        {
+        new {
+            type = "input_text",
+            text = request.Instructions ?? ""
+        }
+    };
+
+        // 2) User message content items
+        var userContentItems = new List<object>();
+        if (!string.IsNullOrEmpty(request.Input))
+        {
+            userContentItems.Add(new
+            {
+                type = "input_text",
+                text = request.Input
+            });
+        }
+        foreach (var img in request.Images)
+        {
+            userContentItems.Add(new
+            {
+                type = "input_image",
+                image_url = img.Url,    // HTTP URL or base64 data-URI
+                detail = qualityDict[img.DetailRequired]
+            });
+        }
+
+        // 3) Wrap into the top-level input array
+        object[] input = new object[]
+        {
+        new { role = "system", content = systemContent },
+        new { role = "user",   content = userContentItems.ToArray() }
+        };
+
+        // 4) Base payload with model, input, temperature
+        var payload = new Dictionary<string, object>
+        {
+            ["model"] = request.Model,
+            ["input"] = input,
+            ["temperature"] = request.Temperature
+        };
+
+        // 5) **Structured output**: under text.format
+        if (typeof(T) != typeof(string))
+        {
+            // Generate your JSON schema object
+            string schemaJson = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
+            var schemaNode = JsonNode.Parse(schemaJson)!;
+
+            payload["text"] = new
+            {
+                format = new
+                {
+                    type = "json_schema",
+                    name = "mySchema",
+                    schema = schemaNode
+                }
+            };
+        }
+
+        return payload;
+    }
+
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)
     {
         ChatGPTResponse? casted = JsonSerializer.Deserialize<ChatGPTResponse>(jsonResponse, _jsonOptions) ?? throw new InvalidOperationException("Empty response");
