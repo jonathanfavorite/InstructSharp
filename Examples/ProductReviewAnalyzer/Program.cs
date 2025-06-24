@@ -23,10 +23,10 @@ List<ILLMClient> clients = new()
 {
     new ChatGPTClient("YOUR-API-KEY-HERE"),
     new ClaudeClient("YOUR-API-KEY-HERE"),
-    new LLamaClient("YOUR-API-KEY-HERE"),
     new GeminiClient("YOUR-API-KEY-HERE"),
     new DeepSeekClient("YOUR-API-KEY-HERE"),
     new GrokClient("YOUR-API-KEY-HERE"),
+    new LLamaClient("YOUR-API-KEY-HERE"),
 };
 
 Console.WriteLine("Instructions: " + instructions);
@@ -37,10 +37,10 @@ Console.WriteLine();
 
 Dictionary<LLMProvider, ILLMRequest> requests = new()
 {
-    [LLMProvider.ChatGPT] = new ChatGPTRequest { Model = ChatGPTModels.GPT4oMini },
-    [LLMProvider.Claude] = new ClaudeRequest { Model = ClaudeModels.Sonnet37 },
-    [LLMProvider.LLama] = new LLamaRequest { Model = LLamaModels.Llama4Maverick17B },
-    [LLMProvider.Gemini] = new GeminiRequest { Model = GeminiModels.Flash25 },
+    [LLMProvider.ChatGPT] = new ChatGPTRequest { Model = ChatGPTModels.GPT4o },
+    [LLMProvider.Claude] = new ClaudeRequest { Model = ClaudeModels.ClaudeSonnet37_Latest },
+    [LLMProvider.LLama] = new LLamaRequest { Model = LlamaModels.Llama4_Maverick_17B_128E_Instruct_FP8 },
+    [LLMProvider.Gemini] = new GeminiRequest { Model = GeminiModels.Gemini25Flash },
     [LLMProvider.DeepSeek] = new DeepSeekRequest { Model = DeepSeekModels.DeepSeekChat },
     [LLMProvider.Grok] = new GrokRequest { Model = GrokModels.Grok3 }
 };
