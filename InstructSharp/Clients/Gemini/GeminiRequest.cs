@@ -15,4 +15,5 @@ public class GeminiRequest : ILLMRequest
     public double Temperature { get; set; }
     public List<LLMImageRequest> Images { get; set; } = new();
     public bool ContainsImages => Images.Count > 0;
+    public bool Stream { get; set; }
 }

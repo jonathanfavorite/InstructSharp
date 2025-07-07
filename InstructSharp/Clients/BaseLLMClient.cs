@@ -119,4 +119,34 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
         var responseJson = await response.Content.ReadAsStringAsync();
         return TransformResponse<T>(responseJson);
     }
+
+    public virtual HttpRequestMessage BuildStreamingRequest<T>(TRequest request)
+    {
+        throw new NotSupportedException($"Streaming is not supported for {GetType().Name}.");
+    }
+
+    public virtual string ParseStreamedChunk<T>(string payload)
+    {
+        throw new NotSupportedException($"Streaming is not supported for {GetType().Name}.");
+    }
+
+    public virtual async IAsyncEnumerable<string> StreamQueryAsync<T>(TRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var httpRequest = BuildStreamingRequest<T>(request);
+        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        Console.WriteLine(await response.Content.ReadAsStringAsync(cancellationToken));
+        response.EnsureSuccessStatusCode();
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        while (!reader.EndOfStream)
+        {
+            var line = await reader.ReadLineAsync();
+            if (line == null || !line.StartsWith("data: ")) continue;
+            var payload = line["data: ".Length..].Trim();
+            if (payload == "[DONE]") break;
+            var chunk = ParseStreamedChunk<T>(payload);
+            if (!string.IsNullOrEmpty(chunk))
+                yield return chunk;
+        }
+    }
 }

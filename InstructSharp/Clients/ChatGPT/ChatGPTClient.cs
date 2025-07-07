@@ -30,7 +30,14 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
     }
 
     public override LLMProvider GetLLMProvider() => LLMProvider.ChatGPT;
-    protected override string GetEndpoint() => "responses";
+    protected override string GetEndpoint()
+    {
+        // Use the streaming endpoint if Stream is true
+        return _lastStreamFlag ? "chat/completions" : "responses";
+    }
+
+    // Track the last stream flag for endpoint selection
+    private bool _lastStreamFlag = false;
 
     protected override object TransformRequest<T>(ChatGPTRequest request)
     {
@@ -41,7 +48,8 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
                 model = request.Model,
                 instructions = request.Instructions,
                 input = request.Input,
-                temperature = request.Temperature
+                temperature = request.Temperature,
+                stream = request.Stream,
             };
         }
 
@@ -55,6 +63,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             instructions = request.Instructions,
             input = request.Input,
             temperature = request.Temperature,
+            stream = request.Stream,
             text = new
             {
                 format = new
@@ -143,8 +152,72 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         return payload;
     }
 
+    private object TransformRequestForCompletions<T>(ChatGPTRequest request)
+    {
+        var messages = new List<object>();
+        if (!string.IsNullOrWhiteSpace(request.Instructions))
+        {
+            messages.Add(new { role = "system", content = request.Instructions });
+        }
+        if (!string.IsNullOrWhiteSpace(request.Input))
+        {
+            messages.Add(new { role = "user", content = request.Input });
+        }
+        var payload = new Dictionary<string, object>
+        {
+            ["model"] = request.Model,
+            ["messages"] = messages,
+            ["temperature"] = request.Temperature,
+            ["stream"] = true
+        };
+        return payload;
+    }
+
+    public override HttpRequestMessage BuildStreamingRequest<T>(ChatGPTRequest request)
+    {
+        request.Stream = true;
+        _lastStreamFlag = true;
+        var providerRequest = TransformRequestForCompletions<T>(request);
+        var json = JsonSerializer.Serialize(providerRequest, _jsonOptions);
+        var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        // Use the streaming endpoint
+        var requestUrl = BuildRequestUrl(request.Model);
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl)
+        {
+            Content = content
+        };
+        foreach (var header in _httpClient.DefaultRequestHeaders)
+        {
+            httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+        }
+        return httpRequest;
+    }
+
+    public override string ParseStreamedChunk<T>(string payload)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("choices", out var choices) &&
+                choices.GetArrayLength() > 0 &&
+                choices[0].TryGetProperty("delta", out var delta) &&
+                delta.TryGetProperty("content", out var contentElem))
+            {
+                var text = contentElem.GetString();
+                return text ?? string.Empty;
+            }
+            return string.Empty;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)
     {
+        _lastStreamFlag = false;
         ChatGPTResponse? casted = JsonSerializer.Deserialize<ChatGPTResponse>(jsonResponse, _jsonOptions) ?? throw new InvalidOperationException("Empty response");
 
         string raw = casted.output[0].content[0].text;
@@ -171,5 +244,4 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             ?? throw new InvalidOperationException($"Failed to deserialize response into type {typeof(T).Name}");
         return response;
     }
-
 }

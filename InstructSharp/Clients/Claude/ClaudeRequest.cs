@@ -16,5 +16,6 @@ public class ClaudeRequest : ILLMRequest
     public int MaxTokens { get; set; } = 1000;
     public List<LLMImageRequest> Images { get; set; } = new();
     public bool ContainsImages => Images.Count > 0;
+    public bool Stream { get; set; }
 
 }

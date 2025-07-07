@@ -9,4 +9,5 @@ public interface ILLMRequest
     double Temperature { get; set; }
     List<LLMImageRequest> Images { get; set; }
     bool ContainsImages => Images.Count > 0;
+    bool Stream { get; set; }
 }
