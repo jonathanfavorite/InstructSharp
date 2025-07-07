@@ -1,16 +1,19 @@
-﻿Microsoft Visual Studio Solution File, Format Version 12.00
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SupportTicketAnalyzer", "SupportTicketAnalyzer\SupportTicketAnalyzer.csproj", "{85861978-40EB-4ABD-B9D0-CA4C9553C19A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SupportTicketAnalyzer", "SupportTicketAnalyzer\SupportTicketAnalyzer.csproj", "{85861978-40EB-4ABD-B9D0-CA4C9553C19A}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "InstructSharp", "..\InstructSharp\InstructSharp.csproj", "{27D8B202-A24B-411E-92F1-C68EB5FD3370}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductReviewAnalyzer", "ProductReviewAnalyzer\ProductReviewAnalyzer.csproj", "{B8718768-3B2A-4C44-8CEC-97075983F00A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProductReviewAnalyzer", "ProductReviewAnalyzer\ProductReviewAnalyzer.csproj", "{B8718768-3B2A-4C44-8CEC-97075983F00A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AdvancedReasoningExample", "AdvancedReasoningExample\AdvancedReasoningExample.csproj", "{C1234567-89AB-CDEF-0123-456789ABCDEF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AdvancedReasoningExample", "AdvancedReasoningExample\AdvancedReasoningExample.csproj", "{C1234567-89AB-CDEF-0123-456789ABCDEF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LatestModelsShowcase", "LatestModelsShowcase\LatestModelsShowcase.csproj", "{D9876543-21FE-DCBA-9876-543210FEDCBA}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LatestModelsShowcase", "LatestModelsShowcase\LatestModelsShowcase.csproj", "{D9876543-21FE-DCBA-9876-543210FEDCBA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StreamingResponses", "StreamingResponses\StreamingResponses.csproj", "{92393D2D-59F8-483B-971A-191A720BF5A2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -38,6 +41,10 @@ Global
 		{D9876543-21FE-DCBA-9876-543210FEDCBA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D9876543-21FE-DCBA-9876-543210FEDCBA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D9876543-21FE-DCBA-9876-543210FEDCBA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{92393D2D-59F8-483B-971A-191A720BF5A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{92393D2D-59F8-483B-971A-191A720BF5A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{92393D2D-59F8-483B-971A-191A720BF5A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{92393D2D-59F8-483B-971A-191A720BF5A2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

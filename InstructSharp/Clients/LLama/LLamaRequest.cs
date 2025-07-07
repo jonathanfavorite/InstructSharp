@@ -15,5 +15,6 @@ public class LLamaRequest : ILLMRequest
     public double Temperature { get; set; } = 0.7;
     public List<LLMImageRequest> Images { get; set; } = new();
     public bool ContainsImages => Images.Count > 0;
+    public bool Stream { get; set; }
 
 }
