@@ -134,7 +134,7 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
     {
         using var httpRequest = BuildStreamingRequest<T>(request);
         using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        Console.WriteLine(await response.Content.ReadAsStringAsync(cancellationToken));
+        //Console.WriteLine(await response.Content.ReadAsStringAsync(cancellationToken));
         response.EnsureSuccessStatusCode();
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
