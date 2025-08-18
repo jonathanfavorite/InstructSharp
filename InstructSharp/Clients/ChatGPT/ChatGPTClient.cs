@@ -127,8 +127,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         var payload = new Dictionary<string, object>
         {
             ["model"] = request.Model,
-            ["input"] = input,
-            ["temperature"] = request.Temperature
+            ["input"] = input
         };
 
         // 5) **Structured output**: under text.format
@@ -220,7 +219,31 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         _lastStreamFlag = false;
         ChatGPTResponse? casted = JsonSerializer.Deserialize<ChatGPTResponse>(jsonResponse, _jsonOptions) ?? throw new InvalidOperationException("Empty response");
 
-        string raw = casted.output[0].content[0].text;
+        string raw = string.Empty;
+        //string raw = casted.output[0].content[0].text;
+
+        if(casted is null || casted.output[0] is null)
+        {
+            throw new Exception("No content was returned, or the model didn't return in the correct format..");
+        }
+
+        foreach (var item in casted.output)
+        {
+            if(item.content is null)
+            {
+                continue;
+            }
+
+            foreach (var content in item.content)
+            {
+                if (content is not null)
+                {
+                    raw = content.text;
+                    break;
+                }
+            }
+        }
+
 
         LLMResponse<T> response = new LLMResponse<T>
         {
