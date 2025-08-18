@@ -48,7 +48,6 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
                 model = request.Model,
                 instructions = request.Instructions,
                 input = request.Input,
-                temperature = request.Temperature,
                 stream = request.Stream,
             };
         }
@@ -62,7 +61,6 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             model = request.Model,
             instructions = request.Instructions,
             input = request.Input,
-            temperature = request.Temperature,
             stream = request.Stream,
             text = new
             {
@@ -166,7 +164,6 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         {
             ["model"] = request.Model,
             ["messages"] = messages,
-            ["temperature"] = request.Temperature,
             ["stream"] = true
         };
         return payload;
