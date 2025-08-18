@@ -51,5 +51,9 @@ public static class ChatGPTModels
     // o4-mini reasoning series
     public static readonly string O4Mini = "o4-mini";
     public static readonly string O4MiniHigh = "o4-mini-high";
+
+    public static readonly string GPT5Nano = "gpt-5-nano";
+    public static readonly string GPT5Mini = "gpt-5-mini";
+    public static readonly string GPT5 = "gpt-5";
 }
 
