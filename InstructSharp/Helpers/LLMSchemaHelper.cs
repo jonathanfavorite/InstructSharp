@@ -6,28 +6,22 @@ using System.Text.Json;
 namespace InstructSharp.Helpers;
 internal static class LLMSchemaHelper
 {
-    // the bulk of this was created by ChatGPT, with some modifications to improve the schema generation
-    // after a few hours of trying to do it myself, I caved and let it figure it out for me.
     internal static string GenerateJsonSchema(Type t)
     {
         try
         {
-            // Configure the NJsonSchema generator settings.
             var settings = new NJsonSchema.NewtonsoftJson.Generation.NewtonsoftJsonSchemaGeneratorSettings
             {
                 DefaultReferenceTypeNullHandling = ReferenceTypeNullHandling.NotNull,
                 SchemaType = SchemaType.JsonSchema,
-                FlattenInheritanceHierarchy = true // Helps remove "allOf" constructs
+                FlattenInheritanceHierarchy = true
             };
 
-            // Generate an NJsonSchema for the type.
             JsonSchema nsSchema = JsonSchema.FromType(t, settings);
 
-            // Post-process the schema: disable additional properties and enforce required properties on the root.
             DisallowAdditionalProperties(nsSchema);
             EnforceRequiredProperties(nsSchema);
 
-            // Also enforce required properties on all definitions.
             if (nsSchema.Definitions != null)
             {
                 foreach (var def in nsSchema.Definitions.Values)
@@ -37,20 +31,24 @@ internal static class LLMSchemaHelper
                 }
             }
 
-            // Convert the schema to JSON.
-            string nsSchemaJson = nsSchema.ToJson();
+            var jObj = JObject.Parse(nsSchema.ToJson());
 
-            // Load into a JObject for further post-processing.
-            var jObj = JObject.Parse(nsSchemaJson);
+            // 1) Inline all $ref (and delete #/definitions)
+            DerefRefsInPlace(jObj);
 
-            // Remove unwanted keys: "$schema", "title", "allOf", "format".
-            RemovePropertiesRecursively(jObj, new[] { "$schema", "title", "allOf", "format" });
-            // Remove "additionalProperties" from any object that has a "$ref"
-            RemoveAdditionalPropertiesIfRef(jObj);
+            // 2) Flatten oneOf/anyOf unions that slipped in
+            FlattenVariants(jObj);
 
-            // Ensure that the top-level "type" is explicitly "object".
+            // 3) Strip banned keys + any stray $ref
+            RemovePropertiesRecursively(jObj, new[] { "$schema", "title", "allOf", "anyOf", "oneOf", "format", "default", "nullable", "$ref" });
+
+            // 4) Ensure explicit types
+            EnsureObjectArrayTypes(jObj);
+
+            // 5) Keep additionalProperties only on objects
+            RemoveAdditionalPropsFromNonObjects(jObj);
+
             jObj["type"] = "object";
-
             return jObj.ToString();
         }
         catch (Exception ex)
@@ -60,94 +58,27 @@ internal static class LLMSchemaHelper
         }
     }
 
-    /// <summary>
-    /// Recursively removes all properties with names in propertiesToRemove from the given JToken.
-    /// </summary>
-    private static void RemovePropertiesRecursively(JToken token, string[] propertiesToRemove)
-    {
-        if (token.Type == JTokenType.Object)
-        {
-            var obj = (JObject)token;
-            // Remove properties matching the names in propertiesToRemove.
-            foreach (var prop in obj.Properties().Where(p => propertiesToRemove.Contains(p.Name)).ToList())
-            {
-                prop.Remove();
-            }
-            // Process child tokens.
-            foreach (var property in obj.Properties())
-            {
-                RemovePropertiesRecursively(property.Value, propertiesToRemove);
-            }
-        }
-        else if (token.Type == JTokenType.Array)
-        {
-            foreach (var item in token.Children())
-            {
-                RemovePropertiesRecursively(item, propertiesToRemove);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Recursively removes the "additionalProperties" property from any JObject that contains a "$ref" property.
-    /// </summary>
-    private static void RemoveAdditionalPropertiesIfRef(JToken token)
-    {
-        if (token.Type == JTokenType.Object)
-        {
-            var obj = (JObject)token;
-            if (obj.ContainsKey("$ref"))
-            {
-                obj.Remove("additionalProperties");
-            }
-            foreach (var property in obj.Properties())
-            {
-                RemoveAdditionalPropertiesIfRef(property.Value);
-            }
-        }
-        else if (token.Type == JTokenType.Array)
-        {
-            foreach (var item in token.Children())
-            {
-                RemoveAdditionalPropertiesIfRef(item);
-            }
-        }
-    }
-
     private static void DisallowAdditionalProperties(JsonSchema schema)
     {
-        if (schema == null)
-            return;
-
+        if (schema == null) return;
         schema.AllowAdditionalProperties = false;
 
         if (schema.Properties != null)
-        {
             foreach (var prop in schema.Properties.Values)
-            {
                 DisallowAdditionalProperties(prop);
-            }
-        }
+
         if (schema.Item != null)
             DisallowAdditionalProperties(schema.Item);
         if (schema.AdditionalPropertiesSchema != null)
             DisallowAdditionalProperties(schema.AdditionalPropertiesSchema);
         if (schema.AllOf != null)
-        {
             foreach (var subSchema in schema.AllOf)
-            {
                 DisallowAdditionalProperties(subSchema);
-            }
-        }
     }
 
-    /// <summary>
-    /// Recursively marks each property as required and populates the RequiredProperties collection.
-    /// </summary>
     private static void EnforceRequiredProperties(JsonSchema schema)
     {
-        if (schema == null)
-            return;
+        if (schema == null) return;
 
         if (schema.Type.HasFlag(JsonObjectType.Object) && schema.Properties != null && schema.Properties.Any())
         {
@@ -158,34 +89,162 @@ internal static class LLMSchemaHelper
             }
             schema.RequiredProperties.Clear();
             foreach (var key in schema.Properties.Keys)
-            {
                 schema.RequiredProperties.Add(key);
-            }
         }
+
         if (schema.Item != null)
             EnforceRequiredProperties(schema.Item);
         if (schema.AdditionalPropertiesSchema != null)
             EnforceRequiredProperties(schema.AdditionalPropertiesSchema);
         if (schema.AllOf != null)
-        {
             foreach (var subSchema in schema.AllOf)
-            {
                 EnforceRequiredProperties(subSchema);
-            }
-        }
         if (schema.AnyOf != null)
-        {
             foreach (var subSchema in schema.AnyOf)
-            {
                 EnforceRequiredProperties(subSchema);
+        if (schema.OneOf != null)
+            foreach (var subSchema in schema.OneOf)
+                EnforceRequiredProperties(subSchema);
+    }
+
+    private static void DerefRefsInPlace(JObject root)
+    {
+        var defs = (root["definitions"] as JObject)?.Properties()
+                    .ToDictionary(p => "#/definitions/" + p.Name, p => (JObject)p.Value.DeepClone())
+                  ?? new Dictionary<string, JObject>();
+
+        void Recurse(JToken t)
+        {
+            if (t is JObject o)
+            {
+                if (o.TryGetValue("$ref", out var r) && r.Type == JTokenType.String)
+                {
+                    var key = r.Value<string>();
+                    if (key != null && defs.TryGetValue(key, out var def))
+                    {
+                        o.Remove("$ref");
+                        foreach (var p in def.Properties())
+                            o[p.Name] = p.Value.DeepClone();
+                    }
+                }
+                foreach (var p in o.Properties().ToList())
+                    Recurse(p.Value);
+            }
+            else if (t is JArray a)
+            {
+                foreach (var c in a) Recurse(c);
             }
         }
-        if (schema.OneOf != null)
+
+        Recurse(root);
+        root.Remove("definitions");
+    }
+
+    private static void FlattenVariants(JToken token)
+    {
+        if (token is JObject obj)
         {
-            foreach (var subSchema in schema.OneOf)
+            if (TryGetVariantArray(obj, out var arr))
             {
-                EnforceRequiredProperties(subSchema);
+                var choice = arr.Children<JObject>()
+                                .FirstOrDefault(o => o["type"]?.ToString() != "null")
+                             ?? arr.Children<JObject>().OfType<JObject>().FirstOrDefault();
+
+                obj.Remove("oneOf");
+                obj.Remove("anyOf");
+
+                if (choice != null)
+                {
+                    foreach (var p in choice.Properties().ToList())
+                        obj[p.Name] = p.Value.DeepClone();
+                }
             }
+
+            foreach (var p in obj.Properties().ToList())
+                FlattenVariants(p.Value);
+        }
+        else if (token is JArray a)
+        {
+            foreach (var c in a) FlattenVariants(c);
+        }
+    }
+
+    private static bool TryGetVariantArray(JObject obj, out JArray arr)
+    {
+        arr = null!;
+        if (obj.TryGetValue("oneOf", out var one) && one is JArray a1) { arr = a1; return true; }
+        if (obj.TryGetValue("anyOf", out var any) && any is JArray a2) { arr = a2; return true; }
+        return false;
+    }
+
+    private static void RemovePropertiesRecursively(JToken token, string[] propertiesToRemove)
+    {
+        if (token.Type == JTokenType.Object)
+        {
+            var obj = (JObject)token;
+
+            foreach (var prop in obj.Properties().Where(p => propertiesToRemove.Contains(p.Name)).ToList())
+                prop.Remove();
+
+            foreach (var property in obj.Properties())
+                RemovePropertiesRecursively(property.Value, propertiesToRemove);
+        }
+        else if (token.Type == JTokenType.Array)
+        {
+            foreach (var item in token.Children())
+                RemovePropertiesRecursively(item, propertiesToRemove);
+        }
+    }
+
+    private static void RemoveAdditionalPropertiesIfRef(JToken token)
+    {
+        if (token.Type == JTokenType.Object)
+        {
+            var obj = (JObject)token;
+            if (obj.ContainsKey("$ref"))
+                obj.Remove("additionalProperties");
+
+            foreach (var property in obj.Properties())
+                RemoveAdditionalPropertiesIfRef(property.Value);
+        }
+        else if (token.Type == JTokenType.Array)
+        {
+            foreach (var item in token.Children())
+                RemoveAdditionalPropertiesIfRef(item);
+        }
+    }
+
+    private static void RemoveAdditionalPropsFromNonObjects(JToken token)
+    {
+        if (token is JObject o)
+        {
+            var type = o["type"]?.ToString();
+            if (type != "object")
+                o.Remove("additionalProperties");
+
+            foreach (var p in o.Properties().ToList())
+                RemoveAdditionalPropsFromNonObjects(p.Value);
+        }
+        else if (token is JArray a)
+        {
+            foreach (var c in a) RemoveAdditionalPropsFromNonObjects(c);
+        }
+    }
+
+    private static void EnsureObjectArrayTypes(JToken token)
+    {
+        if (token is JObject obj)
+        {
+            if (obj["properties"] is JObject && obj["type"] == null) obj["type"] = "object";
+            if (obj["items"] is JObject && obj["type"]?.ToString() != "array" && obj["$ref"] == null)
+                obj["type"] = "array";
+
+            foreach (var p in obj.Properties().ToList())
+                EnsureObjectArrayTypes(p.Value);
+        }
+        else if (token is JArray a)
+        {
+            foreach (var c in a) EnsureObjectArrayTypes(c);
         }
     }
 }
