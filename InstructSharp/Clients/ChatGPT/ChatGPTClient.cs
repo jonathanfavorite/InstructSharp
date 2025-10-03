@@ -1,4 +1,5 @@
-﻿using InstructSharp.Core;
+﻿using System.Collections.Generic;
+using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Interfaces;
 using InstructSharp.Types;
@@ -41,28 +42,27 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
     protected override object TransformRequest<T>(ChatGPTRequest request)
     {
-        if(typeof(T) == typeof(string))
+        var payload = new Dictionary<string, object?>
         {
-            return new
-            {
-                model = request.Model,
-                instructions = request.Instructions,
-                input = request.Input,
-                stream = request.Stream,
-            };
+            ["model"] = request.Model,
+            ["instructions"] = request.Instructions,
+            ["input"] = request.Input,
+            ["stream"] = request.Stream
+        };
+
+        var tools = BuildToolsPayload(request);
+        if (tools.Count > 0)
+        {
+            payload["tools"] = tools;
         }
 
-        // using a custom object
-        string customJsonSchema = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
-        JsonNode schemaNode = JsonNode.Parse(customJsonSchema) ?? throw new InvalidCastException();
-
-        return new
+        if (typeof(T) != typeof(string))
         {
-            model = request.Model,
-            instructions = request.Instructions,
-            input = request.Input,
-            stream = request.Stream,
-            text = new
+            // using a custom object
+            string customJsonSchema = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
+            JsonNode schemaNode = JsonNode.Parse(customJsonSchema) ?? throw new InvalidCastException();
+
+            payload["text"] = new
             {
                 format = new
                 {
@@ -70,8 +70,10 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
                     name = "mySchema",
                     schema = schemaNode
                 }
-            }
-        };
+            };
+        }
+
+        return payload;
     }
 
     protected override object TransformRequestWithImages<T>(ChatGPTRequest request)
@@ -128,6 +130,12 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             ["input"] = input
         };
 
+        var tools = BuildToolsPayload(request);
+        if (tools.Count > 0)
+        {
+            payload["tools"] = tools;
+        }
+
         // 5) **Structured output**: under text.format
         if (typeof(T) != typeof(string))
         {
@@ -147,6 +155,67 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         }
 
         return payload;
+    }
+
+    private static List<object> BuildToolsPayload(ChatGPTRequest request)
+    {
+        List<object> tools = new();
+
+        if (request.EnableWebSearch)
+        {
+            tools.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "web_search"
+            });
+        }
+
+        if (request.EnableFileSearch)
+        {
+            tools.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "file_search"
+            });
+        }
+
+        if (request.EnableImageGeneration)
+        {
+            tools.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "image_generation"
+            });
+        }
+
+        if (request.EnableCodeInterpreter)
+        {
+            tools.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "code_interpreter"
+            });
+        }
+
+        if (request.EnableComputerUse)
+        {
+            tools.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "computer-use-preview"
+            });
+        }
+
+        foreach (ChatGPTToolSpecification tool in request.CustomTools)
+        {
+            if (string.IsNullOrWhiteSpace(tool.Type))
+            {
+                continue;
+            }
+
+            Dictionary<string, object?> expanded = new(tool.Parameters)
+            {
+                ["type"] = tool.Type
+            };
+            tools.Add(expanded);
+        }
+
+        return tools;
     }
 
     private object TransformRequestForCompletions<T>(ChatGPTRequest request)
