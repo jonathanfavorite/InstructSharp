@@ -1,4 +1,9 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Threading;
 using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Interfaces;
@@ -31,14 +36,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
     }
 
     public override LLMProvider GetLLMProvider() => LLMProvider.ChatGPT;
-    protected override string GetEndpoint()
-    {
-        // Use the streaming endpoint if Stream is true
-        return _lastStreamFlag ? "chat/completions" : "responses";
-    }
-
-    // Track the last stream flag for endpoint selection
-    private bool _lastStreamFlag = false;
+    protected override string GetEndpoint() => "responses";
 
     protected override object TransformRequest<T>(ChatGPTRequest request)
     {
@@ -49,6 +47,8 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             ["input"] = request.Input,
             ["stream"] = request.Stream
         };
+
+        ApplyCommonRequestOptions(payload, request);
 
         var tools = BuildToolsPayload(request);
         if (tools.Count > 0)
@@ -124,11 +124,13 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         };
 
         // 4) Base payload with model, input, temperature
-        var payload = new Dictionary<string, object>
+        var payload = new Dictionary<string, object?>
         {
             ["model"] = request.Model,
             ["input"] = input
         };
+
+        ApplyCommonRequestOptions(payload, request);
 
         var tools = BuildToolsPayload(request);
         if (tools.Count > 0)
@@ -157,16 +159,81 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         return payload;
     }
 
+    private static void ApplyCommonRequestOptions(Dictionary<string, object?> payload, ChatGPTRequest request)
+    {
+        var reasoningPayload = BuildReasoningPayload(request);
+        if (reasoningPayload is not null)
+        {
+            payload["reasoning"] = reasoningPayload;
+        }
+
+        if (request.Include.Count > 0)
+        {
+            payload["include"] = request.Include;
+        }
+
+        var toolChoice = BuildToolChoicePayload(request.ToolChoice);
+        if (toolChoice is not null)
+        {
+            payload["tool_choice"] = toolChoice;
+        }
+    }
+
+    private static object? BuildReasoningPayload(ChatGPTRequest request)
+    {
+        if (request.Reasoning is null)
+        {
+            return null;
+        }
+
+        Dictionary<string, object?> map = new();
+        if (!string.IsNullOrWhiteSpace(request.Reasoning.Effort))
+        {
+            map["effort"] = request.Reasoning.Effort;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Reasoning.Summary))
+        {
+            map["summary"] = request.Reasoning.Summary;
+        }
+
+        return map.Count == 0 ? null : map;
+    }
+
+    private static object? BuildToolChoicePayload(ChatGPTToolChoice? toolChoice)
+    {
+        if (toolChoice is null || string.IsNullOrWhiteSpace(toolChoice.Type))
+        {
+            return null;
+        }
+
+        string normalized = toolChoice.Type.Trim();
+        if (string.Equals(normalized, "auto", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(normalized, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return normalized.ToLowerInvariant();
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["type"] = normalized
+        };
+
+        if (!string.IsNullOrWhiteSpace(toolChoice.FunctionName))
+        {
+            payload["function"] = new { name = toolChoice.FunctionName };
+        }
+
+        return payload;
+    }
+
     private static List<object> BuildToolsPayload(ChatGPTRequest request)
     {
         List<object> tools = new();
 
         if (request.EnableWebSearch)
         {
-            tools.Add(new Dictionary<string, object?>
-            {
-                ["type"] = "web_search"
-            });
+            tools.Add(BuildWebSearchTool(request));
         }
 
         if (request.EnableFileSearch)
@@ -218,71 +285,453 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         return tools;
     }
 
-    private object TransformRequestForCompletions<T>(ChatGPTRequest request)
+    private static Dictionary<string, object?> BuildWebSearchTool(ChatGPTRequest request)
     {
-        var messages = new List<object>();
-        if (!string.IsNullOrWhiteSpace(request.Instructions))
+        var userLocation = new Dictionary<string, object?>
         {
-            messages.Add(new { role = "system", content = request.Instructions });
-        }
-        if (!string.IsNullOrWhiteSpace(request.Input))
-        {
-            messages.Add(new { role = "user", content = request.Input });
-        }
-        var payload = new Dictionary<string, object>
-        {
-            ["model"] = request.Model,
-            ["messages"] = messages,
-            ["stream"] = true
+            ["type"] = "approximate",
+            ["city"] = null,
+            ["country"] = request.WebSearchUserCountry,
+            ["region"] = null,
+            ["timezone"] = null
         };
-        return payload;
+
+        return new Dictionary<string, object?>
+        {
+            ["type"] = request.WebSearchToolType,
+            ["filters"] = null,
+            ["search_context_size"] = request.WebSearchContextSize,
+            ["user_location"] = userLocation
+        };
     }
 
     public override HttpRequestMessage BuildStreamingRequest<T>(ChatGPTRequest request)
     {
         request.Stream = true;
-        _lastStreamFlag = true;
-        var providerRequest = TransformRequestForCompletions<T>(request);
+        object providerRequest = request.ContainsImages
+            ? TransformRequestWithImages<T>(request)
+            : TransformRequest<T>(request);
+
         var json = JsonSerializer.Serialize(providerRequest, _jsonOptions);
         var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-        // Use the streaming endpoint
         var requestUrl = BuildRequestUrl(request.Model);
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, requestUrl)
         {
             Content = content
         };
+
+        httpRequest.Headers.Accept.Clear();
+        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
         foreach (var header in _httpClient.DefaultRequestHeaders)
         {
             httpRequest.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
         }
+
         return httpRequest;
     }
 
-    public override string ParseStreamedChunk<T>(string payload)
+    public override async IAsyncEnumerable<string> StreamQueryAsync<T>(ChatGPTRequest request, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        await foreach (var streamEvent in StreamEventsAsync(request, cancellationToken))
+        {
+            if (!string.IsNullOrEmpty(streamEvent.TextDelta))
+            {
+                yield return streamEvent.TextDelta!;
+            }
+        }
+    }
+
+    public async IAsyncEnumerable<ChatGPTStreamEvent> StreamEventsAsync(ChatGPTRequest request, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var httpRequest = BuildStreamingRequest<string>(request);
+        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        string? currentEventName = null;
+        while (!reader.EndOfStream)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var rawLine = await reader.ReadLineAsync();
+            if (rawLine is null)
+            {
+                continue;
+            }
+
+            if (rawLine.StartsWith(":", StringComparison.Ordinal))
+            {
+                continue; // comment / heartbeat
+            }
+
+            if (string.IsNullOrWhiteSpace(rawLine))
+            {
+                currentEventName = null;
+                continue;
+            }
+
+            if (rawLine.StartsWith("event:", StringComparison.Ordinal))
+            {
+                currentEventName = rawLine["event:".Length..].Trim();
+                continue;
+            }
+
+            if (!rawLine.StartsWith("data:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var payload = rawLine["data:".Length..].Trim();
+            if (string.Equals(payload, "[DONE]", StringComparison.Ordinal))
+            {
+                yield break;
+            }
+
+            var parsedEvent = TryParseStreamEvent(currentEventName, payload);
+            if (parsedEvent is not null)
+            {
+                yield return parsedEvent;
+            }
+        }
+    }
+
+    private static ChatGPTStreamEvent? TryParseStreamEvent(string? eventName, string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+
         try
         {
             using var doc = JsonDocument.Parse(payload);
             var root = doc.RootElement;
-            if (root.TryGetProperty("choices", out var choices) &&
-                choices.GetArrayLength() > 0 &&
-                choices[0].TryGetProperty("delta", out var delta) &&
-                delta.TryGetProperty("content", out var contentElem))
+            var resolvedEventName = !string.IsNullOrWhiteSpace(eventName)
+                ? eventName
+                : root.TryGetProperty("type", out var typeProperty) ? typeProperty.GetString() : null;
+
+            if (string.IsNullOrWhiteSpace(resolvedEventName) && root.TryGetProperty("choices", out var choices))
             {
-                var text = contentElem.GetString();
-                return text ?? string.Empty;
+                var legacyDelta = ExtractLegacyCompletionsDelta(choices);
+                if (!string.IsNullOrEmpty(legacyDelta))
+                {
+                    return new ChatGPTStreamEvent
+                    {
+                        RawEventName = "chat.completions.delta",
+                        EventType = ChatGPTStreamEventType.LegacyChatCompletionsDelta,
+                        Activity = ChatGPTStreamActivity.StreamingText,
+                        TextDelta = legacyDelta,
+                        Payload = root.Clone()
+                    };
+                }
             }
-            return string.Empty;
+
+            resolvedEventName ??= string.Empty;
+            var payloadClone = root.Clone();
+
+            var eventType = ResolveEventType(resolvedEventName);
+            var status = ExtractStatus(root);
+            var (toolType, toolId) = ExtractToolInfo(root);
+            var textDelta = ExtractTextDelta(root);
+            var reasoningDelta = TryGetReasoningDelta(root);
+            var activity = ResolveActivity(eventType, toolType, status);
+
+            return new ChatGPTStreamEvent
+            {
+                RawEventName = resolvedEventName,
+                EventType = eventType,
+                Activity = activity,
+                TextDelta = textDelta,
+                ReasoningDelta = reasoningDelta,
+                ToolCallType = toolType,
+                ToolCallId = toolId,
+                Status = status,
+                Payload = payloadClone
+            };
         }
         catch (JsonException)
         {
-            return string.Empty;
+            return null;
         }
+    }
+
+    private static string? ExtractLegacyCompletionsDelta(JsonElement choices)
+    {
+        if (choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var firstChoice = choices[0];
+        if (!firstChoice.TryGetProperty("delta", out var delta))
+        {
+            return null;
+        }
+
+        if (delta.TryGetProperty("content", out var contentElem))
+        {
+            if (contentElem.ValueKind == JsonValueKind.String)
+            {
+                return contentElem.GetString();
+            }
+
+            if (contentElem.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in contentElem.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.Object &&
+                        item.TryGetProperty("text", out var textProp) &&
+                        textProp.ValueKind == JsonValueKind.String)
+                    {
+                        var value = textProp.GetString();
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            return value;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractStatus(JsonElement root)
+    {
+        if (root.TryGetProperty("response", out var responseElem) &&
+            responseElem.ValueKind == JsonValueKind.Object &&
+            responseElem.TryGetProperty("status", out var statusProp) &&
+            statusProp.ValueKind == JsonValueKind.String)
+        {
+            return statusProp.GetString();
+        }
+
+        return null;
+    }
+
+    private static (string? ToolType, string? ToolId) ExtractToolInfo(JsonElement root)
+    {
+        if (!root.TryGetProperty("delta", out var delta) || delta.ValueKind != JsonValueKind.Object)
+        {
+            return (null, null);
+        }
+
+        if (delta.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var toolCall in toolCalls.EnumerateArray())
+            {
+                var toolType = toolCall.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
+                    ? typeProp.GetString()
+                    : null;
+                var toolId = toolCall.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String
+                    ? idProp.GetString()
+                    : null;
+
+                if (!string.IsNullOrEmpty(toolType))
+                {
+                    return (toolType, toolId);
+                }
+            }
+        }
+
+        if (delta.TryGetProperty("web_search_call", out var webSearchCall) && webSearchCall.ValueKind == JsonValueKind.Object)
+        {
+            var callId = webSearchCall.TryGetProperty("call_id", out var callIdProp) && callIdProp.ValueKind == JsonValueKind.String
+                ? callIdProp.GetString()
+                : null;
+            return ("web_search", callId);
+        }
+
+        return (null, null);
+    }
+
+    private static ChatGPTStreamEventType ResolveEventType(string? eventName)
+    {
+        return eventName switch
+        {
+            "response.created" => ChatGPTStreamEventType.ResponseCreated,
+            "response.in_progress" => ChatGPTStreamEventType.ResponseInProgress,
+            "response.output_text.delta" => ChatGPTStreamEventType.ResponseOutputTextDelta,
+            "response.output_text.done" => ChatGPTStreamEventType.ResponseOutputTextDone,
+            "response.output_item.added" => ChatGPTStreamEventType.ResponseOutputItemAdded,
+            "response.output_item.done" => ChatGPTStreamEventType.ResponseOutputItemDone,
+            "response.content_part.added" => ChatGPTStreamEventType.ResponseContentPartAdded,
+            "response.content_part.done" => ChatGPTStreamEventType.ResponseContentPartDone,
+            "response.reasoning.delta" => ChatGPTStreamEventType.ResponseReasoningDelta,
+            "response.reasoning.done" => ChatGPTStreamEventType.ResponseReasoningDone,
+            "response.tool_call.delta" => ChatGPTStreamEventType.ResponseToolCallDelta,
+            "response.tool_call.done" => ChatGPTStreamEventType.ResponseToolCallDone,
+            "response.completed" => ChatGPTStreamEventType.ResponseCompleted,
+            "response.incomplete" => ChatGPTStreamEventType.ResponseIncomplete,
+            "response.error" => ChatGPTStreamEventType.ResponseError,
+            "response.refusal.delta" => ChatGPTStreamEventType.ResponseRefusalDelta,
+            "response.refusal.done" => ChatGPTStreamEventType.ResponseRefusalDone,
+            _ when string.Equals(eventName, "chat.completions.delta", StringComparison.OrdinalIgnoreCase) => ChatGPTStreamEventType.LegacyChatCompletionsDelta,
+            _ => ChatGPTStreamEventType.Unknown
+        };
+    }
+
+    private static ChatGPTStreamActivity ResolveActivity(ChatGPTStreamEventType eventType, string? toolType, string? status)
+    {
+        return eventType switch
+        {
+            ChatGPTStreamEventType.ResponseCreated => ChatGPTStreamActivity.Initializing,
+            ChatGPTStreamEventType.ResponseInProgress => ChatGPTStreamActivity.Thinking,
+            ChatGPTStreamEventType.ResponseReasoningDelta => ChatGPTStreamActivity.Thinking,
+            ChatGPTStreamEventType.ResponseReasoningDone => ChatGPTStreamActivity.Thinking,
+            ChatGPTStreamEventType.ResponseOutputTextDelta => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseOutputTextDone => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseOutputItemAdded => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseOutputItemDone => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseContentPartAdded => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseContentPartDone => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseToolCallDelta => string.Equals(toolType, "web_search", StringComparison.OrdinalIgnoreCase)
+                ? ChatGPTStreamActivity.WebSearch
+                : ChatGPTStreamActivity.ToolUse,
+            ChatGPTStreamEventType.ResponseToolCallDone => string.Equals(toolType, "web_search", StringComparison.OrdinalIgnoreCase)
+                ? ChatGPTStreamActivity.WebSearch
+                : ChatGPTStreamActivity.ToolUse,
+            ChatGPTStreamEventType.ResponseCompleted => ChatGPTStreamActivity.Completed,
+            ChatGPTStreamEventType.ResponseIncomplete => ChatGPTStreamActivity.Error,
+            ChatGPTStreamEventType.ResponseError => ChatGPTStreamActivity.Error,
+            ChatGPTStreamEventType.ResponseRefusalDelta => ChatGPTStreamActivity.Error,
+            ChatGPTStreamEventType.ResponseRefusalDone => ChatGPTStreamActivity.Error,
+            ChatGPTStreamEventType.LegacyChatCompletionsDelta => ChatGPTStreamActivity.StreamingText,
+            _ => ChatGPTStreamActivity.Thinking
+        };
+    }
+
+    private static string? TryGetReasoningDelta(JsonElement root)
+    {
+        if (!root.TryGetProperty("delta", out var delta))
+        {
+            return TryGetTopLevelString(root, "reasoning");
+        }
+
+        if (delta.ValueKind == JsonValueKind.String)
+        {
+            return delta.GetString();
+        }
+
+        if (delta.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (delta.TryGetProperty("reasoning", out var reasoningElem))
+        {
+            if (reasoningElem.ValueKind == JsonValueKind.String)
+            {
+                return reasoningElem.GetString();
+            }
+
+            if (reasoningElem.ValueKind == JsonValueKind.Object &&
+                reasoningElem.TryGetProperty("text", out var reasoningText) &&
+                reasoningText.ValueKind == JsonValueKind.String)
+            {
+                return reasoningText.GetString();
+            }
+        }
+
+        if (delta.TryGetProperty("reasoning_output_text", out var reasoningArray) && reasoningArray.ValueKind == JsonValueKind.Array)
+        {
+            StringBuilder builder = new();
+            foreach (var node in reasoningArray.EnumerateArray())
+            {
+                if (node.ValueKind == JsonValueKind.String)
+                {
+                    builder.Append(node.GetString());
+                    continue;
+                }
+
+                if (node.ValueKind == JsonValueKind.Object &&
+                    node.TryGetProperty("text", out var nodeText) &&
+                    nodeText.ValueKind == JsonValueKind.String)
+                {
+                    builder.Append(nodeText.GetString());
+                }
+            }
+
+            if (builder.Length > 0)
+            {
+                return builder.ToString();
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractTextDelta(JsonElement root)
+    {
+        if (!root.TryGetProperty("delta", out var delta))
+        {
+            return null;
+        }
+
+        switch (delta.ValueKind)
+        {
+            case JsonValueKind.String:
+                return delta.GetString();
+
+            case JsonValueKind.Object:
+                if (delta.TryGetProperty("text", out var textProp) && textProp.ValueKind == JsonValueKind.String)
+                {
+                    return textProp.GetString();
+                }
+
+                if (delta.TryGetProperty("content", out var contentProp) && contentProp.ValueKind == JsonValueKind.String)
+                {
+                    return contentProp.GetString();
+                }
+
+                if (delta.TryGetProperty("output_text", out var outputTextProp) && outputTextProp.ValueKind == JsonValueKind.String)
+                {
+                    return outputTextProp.GetString();
+                }
+                break;
+
+            case JsonValueKind.Array:
+                StringBuilder builder = new();
+                foreach (var chunk in delta.EnumerateArray())
+                {
+                    if (chunk.ValueKind == JsonValueKind.String)
+                    {
+                        builder.Append(chunk.GetString());
+                    }
+                    else if (chunk.ValueKind == JsonValueKind.Object &&
+                             chunk.TryGetProperty("text", out var chunkText) &&
+                             chunkText.ValueKind == JsonValueKind.String)
+                    {
+                        builder.Append(chunkText.GetString());
+                    }
+                }
+
+                if (builder.Length > 0)
+                {
+                    return builder.ToString();
+                }
+                break;
+        }
+
+        return TryGetTopLevelString(root, "delta");
+    }
+
+    private static string? TryGetTopLevelString(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty(propertyName, out var value) &&
+            value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString();
+        }
+
+        return null;
     }
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)
     {
-        _lastStreamFlag = false;
         ChatGPTResponse? casted = JsonSerializer.Deserialize<ChatGPTResponse>(jsonResponse, _jsonOptions) ?? throw new InvalidOperationException("Empty response");
 
         string raw = string.Empty;
