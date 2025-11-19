@@ -26,6 +26,7 @@ public static class ChatGPTModels
     public static readonly string GPT4o = "gpt-4o";
     public static readonly string GPT4oMini = "gpt-4o-mini";
     public static readonly string GPT4oLatest = "gpt-4o-latest";
+    public static readonly string GPTImage1 = "gpt-image-1";
 
     // GPT-4.1 series
     public static readonly string GPT41 = "gpt-4.1";

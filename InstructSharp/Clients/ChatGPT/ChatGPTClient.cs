@@ -11,6 +11,7 @@ using InstructSharp.Types;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Linq;
 
 namespace InstructSharp.Clients.ChatGPT;
 public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
@@ -728,6 +729,82 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         }
 
         return null;
+    }
+
+    public async Task<ChatGPTImageGenerationResult> GenerateImageAsync(ChatGPTImageGenerationRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null)
+        {
+            throw new ArgumentNullException(nameof(request));
+        }
+
+        request.Validate();
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = request.Model,
+            ["prompt"] = request.Prompt,
+            ["size"] = request.Size,
+            ["quality"] = request.Quality,
+            ["n"] = request.ImageCount
+        };
+        if (!string.IsNullOrWhiteSpace(request.OutputFormat))
+        {
+            payload["output_format"] = request.OutputFormat;
+        }
+        if (!string.IsNullOrWhiteSpace(request.Style))
+        {
+            payload["style"] = request.Style;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Background))
+        {
+            payload["background"] = request.Background;
+        }
+
+        // 'negative_prompt' is not yet accepted by GPT-Image; reserved for future parity.
+
+        if (!string.IsNullOrWhiteSpace(request.User))
+        {
+            payload["user"] = request.User;
+        }
+
+        if (request.Seed.HasValue)
+        {
+            payload["seed"] = request.Seed;
+        }
+
+        var body = JsonSerializer.Serialize(payload, _jsonOptions);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync("images/generations", content, cancellationToken);
+        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.WriteLine($"[ChatGPTImage] Error {(int)response.StatusCode} {response.StatusCode}: {jsonResponse}");
+            response.EnsureSuccessStatusCode();
+        }
+
+        var parsed = JsonSerializer.Deserialize<ChatGPTImageGenerationResponse>(jsonResponse, _jsonOptions)
+                     ?? throw new InvalidOperationException("Image generation response could not be parsed.");
+
+        var createdAt = parsed.Created > 0
+            ? DateTimeOffset.FromUnixTimeSeconds(parsed.Created)
+            : DateTimeOffset.UtcNow;
+
+        var images = parsed.Data.Select(d => new ChatGPTGeneratedImage
+        {
+            Base64Data = d.Base64Payload,
+            Url = d.Url,
+            RevisedPrompt = d.RevisedPrompt ?? parsed.RevisedPrompt
+        }).ToList();
+
+        return new ChatGPTImageGenerationResult
+        {
+            Model = request.Model,
+            CreatedAt = createdAt,
+            Images = images
+        };
     }
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)
