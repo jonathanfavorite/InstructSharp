@@ -9,7 +9,7 @@ ChatGPTRequest request = new()
 {
     Model = ChatGPTModels.GPT5,
     Instructions = "You are a research assistant. Use web search to gather the latest information and cite your sources.",
-    Input = "Summarize the most recent announcements about large-scale renewable energy investments.",
+    Input = "waht is big in the news today so far?",
     EnableWebSearch = true
 };
 
