@@ -222,7 +222,14 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
         if (!string.IsNullOrWhiteSpace(toolChoice.FunctionName))
         {
-            payload["function"] = new { name = toolChoice.FunctionName };
+            if (string.Equals(normalized, "function", StringComparison.OrdinalIgnoreCase))
+            {
+                payload["name"] = toolChoice.FunctionName;
+            }
+            else
+            {
+                payload["function_name"] = toolChoice.FunctionName;
+            }
         }
 
         return payload;
@@ -347,6 +354,11 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
     {
         using var httpRequest = BuildStreamingRequest<string>(request);
         using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        if(!response.IsSuccessStatusCode)
+        {
+            Console.WriteLine(await response.Content.ReadAsStringAsync());
+        }
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -434,7 +446,9 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
             var eventType = ResolveEventType(resolvedEventName);
             var status = ExtractStatus(root);
-            var (toolType, toolId) = ExtractToolInfo(root);
+            var toolCall = ExtractToolCall(root);
+            var toolType = toolCall?.Type;
+            var toolId = toolCall?.CallId ?? toolCall?.Id;
             var textDelta = ExtractTextDelta(root);
             var reasoningDelta = TryGetReasoningDelta(root);
             var activity = ResolveActivity(eventType, toolType, status);
@@ -448,6 +462,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
                 ReasoningDelta = reasoningDelta,
                 ToolCallType = toolType,
                 ToolCallId = toolId,
+                ToolCall = toolCall,
                 Status = status,
                 Payload = payloadClone
             };
@@ -512,40 +527,250 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         return null;
     }
 
-    private static (string? ToolType, string? ToolId) ExtractToolInfo(JsonElement root)
+    private static ChatGPTToolCall? ExtractToolCall(JsonElement root)
     {
-        if (!root.TryGetProperty("delta", out var delta) || delta.ValueKind != JsonValueKind.Object)
+        if (root.ValueKind != JsonValueKind.Object)
         {
-            return (null, null);
+            return null;
         }
 
+        if (root.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
+        {
+            var fromDelta = ExtractToolCallFromDelta(delta);
+            if (fromDelta is not null)
+            {
+                return fromDelta;
+            }
+        }
+
+        if (root.TryGetProperty("tool_call", out var toolCallElem) && toolCallElem.ValueKind == JsonValueKind.Object)
+        {
+            return ParseToolCallElement(toolCallElem);
+        }
+
+        var functionCallArgs = TryParseFunctionCallArguments(root);
+        if (functionCallArgs is not null)
+        {
+            return functionCallArgs;
+        }
+
+        if (root.TryGetProperty("function_call", out var functionCall) && functionCall.ValueKind == JsonValueKind.Object)
+        {
+            return ParseFunctionCallElement(root, functionCall);
+        }
+
+        if (root.TryGetProperty("web_search_call", out var webSearchCall) && webSearchCall.ValueKind == JsonValueKind.Object)
+        {
+            return ParseNonFunctionToolCall(webSearchCall, "web_search");
+        }
+
+        if (root.TryGetProperty("output", out var outputElem) && outputElem.ValueKind == JsonValueKind.Object)
+        {
+            if (outputElem.TryGetProperty("tool_call", out var nestedToolCall) && nestedToolCall.ValueKind == JsonValueKind.Object)
+            {
+                return ParseToolCallElement(nestedToolCall);
+            }
+        }
+
+        return null;
+    }
+
+    private static ChatGPTToolCall? ExtractToolCallFromDelta(JsonElement delta)
+    {
         if (delta.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array)
         {
-            foreach (var toolCall in toolCalls.EnumerateArray())
+            foreach (var call in toolCalls.EnumerateArray())
             {
-                var toolType = toolCall.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
-                    ? typeProp.GetString()
-                    : null;
-                var toolId = toolCall.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String
-                    ? idProp.GetString()
-                    : null;
-
-                if (!string.IsNullOrEmpty(toolType))
+                var parsed = ParseToolCallElement(call);
+                if (parsed is not null)
                 {
-                    return (toolType, toolId);
+                    return parsed;
                 }
             }
         }
 
         if (delta.TryGetProperty("web_search_call", out var webSearchCall) && webSearchCall.ValueKind == JsonValueKind.Object)
         {
-            var callId = webSearchCall.TryGetProperty("call_id", out var callIdProp) && callIdProp.ValueKind == JsonValueKind.String
-                ? callIdProp.GetString()
-                : null;
-            return ("web_search", callId);
+            return ParseNonFunctionToolCall(webSearchCall, "web_search");
         }
 
-        return (null, null);
+        var functionCallArgs = TryParseFunctionCallArguments(delta);
+        if (functionCallArgs is not null)
+        {
+            return functionCallArgs;
+        }
+
+        if (delta.TryGetProperty("function_call", out var functionCall) && functionCall.ValueKind == JsonValueKind.Object)
+        {
+            return ParseFunctionCallElement(delta, functionCall);
+        }
+
+        return null;
+    }
+
+    private static ChatGPTToolCall? ParseToolCallElement(JsonElement toolCallElement)
+    {
+        if (toolCallElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        string? type = TryGetString(toolCallElement, "type");
+        string? id = TryGetString(toolCallElement, "id");
+        string? callId = TryGetString(toolCallElement, "call_id");
+        string? status = TryGetString(toolCallElement, "status");
+
+        string? name = null;
+        string? arguments = null;
+        string? output = null;
+
+        if (toolCallElement.TryGetProperty("function", out var functionElem) && functionElem.ValueKind == JsonValueKind.Object)
+        {
+            name = TryGetString(functionElem, "name");
+            arguments = TryGetJsonAsString(functionElem, "arguments");
+            output = TryGetJsonAsString(functionElem, "output");
+        }
+        else
+        {
+            name = TryGetString(toolCallElement, "name");
+            arguments = TryGetJsonAsString(toolCallElement, "arguments");
+            output = TryGetJsonAsString(toolCallElement, "output");
+        }
+
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            type = "function";
+        }
+
+        return new ChatGPTToolCall
+        {
+            Id = id ?? callId ?? string.Empty,
+            CallId = callId ?? id,
+            Type = type,
+            Name = name,
+            ArgumentsJson = arguments,
+            Output = output,
+            Status = status
+        };
+    }
+
+    private static ChatGPTToolCall ParseFunctionCallElement(JsonElement root, JsonElement functionCall)
+    {
+        var callId = TryGetString(root, "call_id") ?? TryGetString(root, "id");
+        var name = TryGetString(functionCall, "name");
+        var arguments = TryGetJsonAsString(functionCall, "arguments");
+        var output = TryGetJsonAsString(functionCall, "output");
+        return new ChatGPTToolCall
+        {
+            Id = callId ?? string.Empty,
+            CallId = callId,
+            Type = "function",
+            Name = name,
+            ArgumentsJson = arguments,
+            Output = output,
+            Status = TryGetString(root, "status")
+        };
+    }
+
+    private static ChatGPTToolCall? TryParseFunctionCallArguments(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        JsonElement? argsProp = null;
+        if (element.TryGetProperty("function_call_arguments", out var fcArgs))
+        {
+            argsProp = fcArgs;
+        }
+        else if (element.TryGetProperty("arguments", out var finalArgs))
+        {
+            argsProp = finalArgs;
+        }
+
+        string? arguments = null;
+        if (argsProp.HasValue)
+        {
+            arguments = argsProp.Value.ValueKind switch
+            {
+                JsonValueKind.String => argsProp.Value.GetString(),
+                JsonValueKind.Object or JsonValueKind.Array => argsProp.Value.GetRawText(),
+                _ => null
+            };
+        }
+
+        string? delta = TryGetString(element, "delta");
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            arguments = delta;
+        }
+
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            return null;
+        }
+
+        string? id = TryGetString(element, "item_id") ?? TryGetString(element, "id");
+        string? callId = TryGetString(element, "call_id") ?? id;
+
+        int? outputIndex = null;
+        if (element.TryGetProperty("output_index", out var idx) &&
+            idx.ValueKind == JsonValueKind.Number &&
+            idx.TryGetInt32(out var parsedIdx))
+        {
+            outputIndex = parsedIdx;
+        }
+
+        string? name = TryGetString(element, "name");
+
+        return new ChatGPTToolCall
+        {
+            Id = id ?? callId ?? string.Empty,
+            CallId = callId,
+            Type = "function",
+            Name = name,
+            ArgumentsJson = arguments,
+            RawItemId = id,
+            OutputIndex = outputIndex
+        };
+    }
+
+    private static ChatGPTToolCall ParseNonFunctionToolCall(JsonElement element, string type)
+    {
+        var callId = TryGetString(element, "call_id");
+        return new ChatGPTToolCall
+        {
+            Id = callId ?? string.Empty,
+            CallId = callId,
+            Type = type,
+            ArgumentsJson = element.GetRawText()
+        };
+    }
+
+    private static string? TryGetString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var prop))
+        {
+            return null;
+        }
+
+        return prop.ValueKind == JsonValueKind.String ? prop.GetString() : null;
+    }
+
+    private static string? TryGetJsonAsString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var prop))
+        {
+            return null;
+        }
+
+        return prop.ValueKind switch
+        {
+            JsonValueKind.String => prop.GetString(),
+            JsonValueKind.Object or JsonValueKind.Array => prop.GetRawText(),
+            _ => null
+        };
     }
 
     private static ChatGPTStreamEventType ResolveEventType(string? eventName)
@@ -564,6 +789,8 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             "response.reasoning.done" => ChatGPTStreamEventType.ResponseReasoningDone,
             "response.tool_call.delta" => ChatGPTStreamEventType.ResponseToolCallDelta,
             "response.tool_call.done" => ChatGPTStreamEventType.ResponseToolCallDone,
+            "response.function_call_arguments.delta" => ChatGPTStreamEventType.ResponseToolCallDelta,
+            "response.function_call_arguments.done" => ChatGPTStreamEventType.ResponseToolCallDone,
             "response.completed" => ChatGPTStreamEventType.ResponseCompleted,
             "response.incomplete" => ChatGPTStreamEventType.ResponseIncomplete,
             "response.error" => ChatGPTStreamEventType.ResponseError,
@@ -811,31 +1038,8 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
     {
         ChatGPTResponse? casted = JsonSerializer.Deserialize<ChatGPTResponse>(jsonResponse, _jsonOptions) ?? throw new InvalidOperationException("Empty response");
 
-        string raw = string.Empty;
-        //string raw = casted.output[0].content[0].text;
-
-        if(casted is null || casted.output[0] is null)
-        {
-            throw new Exception("No content was returned, or the model didn't return in the correct format..");
-        }
-
-        foreach (var item in casted.output)
-        {
-            if(item.content is null)
-            {
-                continue;
-            }
-
-            foreach (var content in item.content)
-            {
-                if (content is not null)
-                {
-                    raw = content.text;
-                    break;
-                }
-            }
-        }
-
+        string raw = ExtractTextFromResponse(casted);
+        IReadOnlyList<ChatGPTToolCall> toolCalls = ExtractToolCalls(casted);
 
         LLMResponse<T> response = new LLMResponse<T>
         {
@@ -849,14 +1053,93 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             }
         };
 
+        if (toolCalls.Count > 0)
+        {
+            response.AdditionalData[ChatGPTToolCall.AdditionalDataKey] = toolCalls;
+        }
+
         if (typeof(T) == typeof(string))
         {
-            response.Result = (T)(object)raw;
+            response.Result = (T)(object)(raw ?? string.Empty);
+            return response;
+        }
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            response.Result = default;
             return response;
         }
 
         response.Result = JsonSerializer.Deserialize<T>(raw)
             ?? throw new InvalidOperationException($"Failed to deserialize response into type {typeof(T).Name}");
         return response;
+    }
+
+    private static string ExtractTextFromResponse(ChatGPTResponse response)
+    {
+        if (response.output is null)
+        {
+            return string.Empty;
+        }
+
+        foreach (var item in response.output)
+        {
+            if (item?.content is null)
+            {
+                continue;
+            }
+
+            foreach (var content in item.content)
+            {
+                if (!string.IsNullOrWhiteSpace(content?.text))
+                {
+                    return content.text;
+                }
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static IReadOnlyList<ChatGPTToolCall> ExtractToolCalls(ChatGPTResponse response)
+    {
+        List<ChatGPTToolCall> calls = new();
+        if (response.output is null)
+        {
+            return calls;
+        }
+
+        foreach (var item in response.output)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            if (!string.Equals(item.type, "function_call", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string? arguments = !string.IsNullOrWhiteSpace(item.arguments)
+                ? item.arguments
+                : item.function_call?.arguments;
+            string? name = !string.IsNullOrWhiteSpace(item.name)
+                ? item.name
+                : item.function_call?.name;
+
+            calls.Add(new ChatGPTToolCall
+            {
+                Id = item.id ?? item.call_id ?? string.Empty,
+                CallId = item.call_id ?? item.id,
+                Type = item.type ?? "function_call",
+                Name = name,
+                ArgumentsJson = arguments,
+                Output = item.function_call?.output,
+                Status = item.status
+            });
+        }
+
+        return calls;
     }
 }

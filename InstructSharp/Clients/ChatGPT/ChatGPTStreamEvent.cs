@@ -14,6 +14,7 @@ public sealed class ChatGPTStreamEvent
     public string? ReasoningDelta { get; init; }
     public string? ToolCallType { get; init; }
     public string? ToolCallId { get; init; }
+    public ChatGPTToolCall? ToolCall { get; init; }
     public string? Status { get; init; }
     public bool IsThinking => Activity is ChatGPTStreamActivity.Initializing or ChatGPTStreamActivity.Thinking;
     public bool IsWebSearch => Activity == ChatGPTStreamActivity.WebSearch;

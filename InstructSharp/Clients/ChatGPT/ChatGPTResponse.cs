@@ -54,6 +54,10 @@ internal class ChatGPTResponseOutput
     public string status { get; set; }
     public string role { get; set; }
     public List<Content> content { get; set; }
+    public string call_id { get; set; }
+    public string name { get; set; }
+    public string arguments { get; set; }
+    public ChatGPTResponseFunctionCall function_call { get; set; }
 }
 
 internal class ChatGPTResponseOutputTokensDetails
@@ -81,4 +85,11 @@ internal class ChatGPTResponseUsage
     public int output_tokens { get; set; }
     public ChatGPTResponseOutputTokensDetails output_tokens_details { get; set; }
     public int total_tokens { get; set; }
+}
+
+internal class ChatGPTResponseFunctionCall
+{
+    public string name { get; set; }
+    public string arguments { get; set; }
+    public string output { get; set; }
 }

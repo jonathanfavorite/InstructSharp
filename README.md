@@ -126,6 +126,9 @@ Showcases specialized reasoning models (o1, Claude 3.7, DeepSeek R1) solving com
 ### **LatestModelsShowcase**
 Demonstrates the most advanced models from each provider performing comprehensive text analysis with sentiment, themes, and insights.
 
+### **StreamingWithTools**
+Streams SSE events from ChatGPT, captures live tool calls via the new builder API, and shows how to deserialize the function arguments you need to execute.
+
 ```bash
 # Run examples
 cd Examples

@@ -24,6 +24,17 @@ public class ChatGPTRequest : ILLMRequest
     public ChatGPTToolChoice? ToolChoice { get; set; }
     public ChatGPTReasoningOptions? Reasoning { get; set; }
     public List<string> Include { get; set; } = new();
+
+    public ChatGPTRequest AddTool(ChatGPTToolSpecification tool)
+    {
+        if (tool is null)
+        {
+            throw new ArgumentNullException(nameof(tool));
+        }
+
+        CustomTools.Add(tool);
+        return this;
+    }
 }
 
 public class ChatGPTToolSpecification
