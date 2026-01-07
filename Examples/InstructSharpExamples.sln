@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImageGeneration", "ImageGen
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StreamingWithTools", "StreamingWithTools\StreamingWithTools.csproj", "{7B06D9A6-08DC-4E5E-BEDD-5CDF6621B59D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ContinualConversation", "ContinualConversation\ContinualConversation.csproj", "{38017D7D-561E-452A-9BC3-37735A2400CC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,10 @@ Global
 		{7B06D9A6-08DC-4E5E-BEDD-5CDF6621B59D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7B06D9A6-08DC-4E5E-BEDD-5CDF6621B59D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7B06D9A6-08DC-4E5E-BEDD-5CDF6621B59D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{38017D7D-561E-452A-9BC3-37735A2400CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38017D7D-561E-452A-9BC3-37735A2400CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38017D7D-561E-452A-9BC3-37735A2400CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38017D7D-561E-452A-9BC3-37735A2400CC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

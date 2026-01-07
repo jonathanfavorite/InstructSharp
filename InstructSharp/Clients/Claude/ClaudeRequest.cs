@@ -13,6 +13,7 @@ public class ClaudeRequest : ILLMRequest
     public double Temperature { get; set; } = 0.7;
     public string Instructions { get; set; } = string.Empty;
     public string Input { get; set; } = string.Empty;
+    public string? ConversationId { get; set; }
     public int MaxTokens { get; set; } = 1000;
     public List<LLMImageRequest> Images { get; set; } = new();
     public bool ContainsImages => Images.Count > 0;

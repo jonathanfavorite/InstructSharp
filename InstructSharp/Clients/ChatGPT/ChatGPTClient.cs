@@ -39,6 +39,45 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
     public override LLMProvider GetLLMProvider() => LLMProvider.ChatGPT;
     protected override string GetEndpoint() => "responses";
 
+    public async Task<ChatGPTConversation> CreateConversationAsync(ChatGPTConversationCreateRequest? request = null, CancellationToken cancellationToken = default)
+    {
+        var payload = new Dictionary<string, object?>();
+        if (request?.Metadata is { Count: > 0 })
+        {
+            payload["metadata"] = request.Metadata;
+        }
+
+        if (request?.Items is { Count: > 0 })
+        {
+            payload["items"] = request.Items;
+        }
+
+        var json = JsonSerializer.Serialize(payload, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync("conversations", content, cancellationToken);
+        var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.WriteLine($"[ChatGPTConversation] Error {(int)response.StatusCode} {response.StatusCode}: {jsonResponse}");
+            response.EnsureSuccessStatusCode();
+        }
+
+        var parsed = JsonSerializer.Deserialize<ChatGPTConversationResponse>(jsonResponse, _jsonOptions)
+                     ?? throw new InvalidOperationException("Conversation response could not be parsed.");
+
+        var createdAt = parsed.created_at > 0
+            ? DateTimeOffset.FromUnixTimeSeconds(parsed.created_at)
+            : DateTimeOffset.UtcNow;
+
+        return new ChatGPTConversation
+        {
+            Id = parsed.id ?? string.Empty,
+            CreatedAt = createdAt,
+            Metadata = parsed.metadata
+        };
+    }
+
     protected override object TransformRequest<T>(ChatGPTRequest request)
     {
         var payload = new Dictionary<string, object?>
@@ -166,6 +205,11 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         if (reasoningPayload is not null)
         {
             payload["reasoning"] = reasoningPayload;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ConversationId))
+        {
+            payload["conversation"] = request.ConversationId;
         }
 
         if (request.Include.Count > 0)
