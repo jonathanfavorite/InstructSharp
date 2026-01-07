@@ -167,7 +167,8 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         var payload = new Dictionary<string, object?>
         {
             ["model"] = request.Model,
-            ["input"] = input
+            ["input"] = input,
+            ["stream"] = request.Stream
         };
 
         ApplyCommonRequestOptions(payload, request);
