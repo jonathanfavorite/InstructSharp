@@ -25,7 +25,11 @@ public class DeepSeekClient : BaseLLMClient<DeepSeekRequest>
     protected override void ConfigureHttpClient()
     {
         _httpClient.BaseAddress = new Uri(_config.BaseUrl);
-        _httpClient.Timeout = _config.Timeout;
+        // Only set timeout if no HttpClient was provided (respect user's configured timeout)
+        if (!_httpClientWasProvided)
+        {
+            _httpClient.Timeout = _config.Timeout;
+        }
         _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_config.ApiKey}");
     }
 

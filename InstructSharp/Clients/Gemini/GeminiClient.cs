@@ -26,7 +26,11 @@ public class GeminiClient : BaseLLMClient<GeminiRequest>
 
     protected override void ConfigureHttpClient()
     {
-        _httpClient.Timeout = _config.Timeout;
+        // Only set timeout if no HttpClient was provided (respect user's configured timeout)
+        if (!_httpClientWasProvided)
+        {
+            _httpClient.Timeout = _config.Timeout;
+        }
     }
 
     public override LLMProvider GetLLMProvider() => LLMProvider.Gemini;

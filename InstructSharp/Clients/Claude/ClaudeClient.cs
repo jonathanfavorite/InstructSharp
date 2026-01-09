@@ -24,7 +24,11 @@ public class ClaudeClient : BaseLLMClient<ClaudeRequest>
 
     protected override void ConfigureHttpClient()
     {
-        _httpClient.Timeout = _config.Timeout;
+        // Only set timeout if no HttpClient was provided (respect user's configured timeout)
+        if (!_httpClientWasProvided)
+        {
+            _httpClient.Timeout = _config.Timeout;
+        }
         _httpClient.DefaultRequestHeaders.Add("x-api-key", $"{_config.ApiKey}");
         _httpClient.DefaultRequestHeaders.Add("anthropic-version", $"{ClaudeConstants.AnthripicVersion}");
     }

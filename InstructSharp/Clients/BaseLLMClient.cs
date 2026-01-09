@@ -11,11 +11,12 @@ public abstract class BaseLLMClient<TRequest> : ILLMClient where TRequest: class
     protected readonly HttpClient _httpClient;
     protected readonly HttpConfiguration _config;
     protected readonly JsonSerializerOptions _jsonOptions;
+    protected readonly bool _httpClientWasProvided;
 
     protected BaseLLMClient(HttpConfiguration config, HttpClient? httpClient = null)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
-        
+        _httpClientWasProvided = httpClient is not null;
         _httpClient = httpClient ?? new HttpClient();
 
         // Only set base address if we're not using URL patterns or delayed setup
