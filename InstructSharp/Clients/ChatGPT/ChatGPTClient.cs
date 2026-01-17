@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -8,6 +9,7 @@ using InstructSharp.Core;
 using InstructSharp.Helpers;
 using InstructSharp.Interfaces;
 using InstructSharp.Types;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -1016,43 +1018,12 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
         request.Validate();
 
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = request.Model,
-            ["prompt"] = request.Prompt,
-            ["size"] = request.Size,
-            ["quality"] = request.Quality,
-            ["n"] = request.ImageCount
-        };
-        if (!string.IsNullOrWhiteSpace(request.OutputFormat))
-        {
-            payload["output_format"] = request.OutputFormat;
-        }
-        if (!string.IsNullOrWhiteSpace(request.Style))
-        {
-            payload["style"] = request.Style;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Background))
-        {
-            payload["background"] = request.Background;
-        }
-
-        // 'negative_prompt' is not yet accepted by GPT-Image; reserved for future parity.
-
-        if (!string.IsNullOrWhiteSpace(request.User))
-        {
-            payload["user"] = request.User;
-        }
-
-        if (request.Seed.HasValue)
-        {
-            payload["seed"] = request.Seed;
-        }
-
-        var body = JsonSerializer.Serialize(payload, _jsonOptions);
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        using var response = await _httpClient.PostAsync("images/generations", content, cancellationToken);
+        bool hasImages = request.Images is { Count: > 0 };
+        var endpoint = hasImages ? "images/edits" : "images/generations";
+        using HttpContent content = hasImages
+            ? BuildImageEditContent(request)
+            : BuildImageGenerationContent(request);
+        using var response = await _httpClient.PostAsync(endpoint, content, cancellationToken);
         var jsonResponse = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -1082,6 +1053,205 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             Images = images
         };
     }
+
+    private HttpContent BuildImageGenerationContent(ChatGPTImageGenerationRequest request)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = request.Model,
+            ["prompt"] = request.Prompt,
+            ["size"] = request.Size,
+            ["quality"] = request.Quality,
+            ["n"] = request.ImageCount
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.OutputFormat))
+        {
+            payload["output_format"] = request.OutputFormat;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Style))
+        {
+            payload["style"] = request.Style;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Background))
+        {
+            payload["background"] = request.Background;
+        }
+
+        // 'negative_prompt' is not yet accepted by GPT-Image; reserved for future parity.
+
+        if (!string.IsNullOrWhiteSpace(request.User))
+        {
+            payload["user"] = request.User;
+        }
+
+        if (request.Seed.HasValue)
+        {
+            payload["seed"] = request.Seed;
+        }
+
+        var body = JsonSerializer.Serialize(payload, _jsonOptions);
+        return new StringContent(body, Encoding.UTF8, "application/json");
+    }
+
+    private static HttpContent BuildImageEditContent(ChatGPTImageGenerationRequest request)
+    {
+        var form = new MultipartFormDataContent();
+
+        form.Add(new StringContent(request.Model), "model");
+        form.Add(new StringContent(request.Prompt), "prompt");
+        form.Add(new StringContent(request.ImageCount.ToString(CultureInfo.InvariantCulture)), "n");
+
+        if (!string.IsNullOrWhiteSpace(request.Size))
+        {
+            form.Add(new StringContent(request.Size), "size");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Quality))
+        {
+            form.Add(new StringContent(request.Quality), "quality");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.OutputFormat))
+        {
+            form.Add(new StringContent(request.OutputFormat), "output_format");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Style))
+        {
+            form.Add(new StringContent(request.Style), "style");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Background))
+        {
+            form.Add(new StringContent(request.Background), "background");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.User))
+        {
+            form.Add(new StringContent(request.User), "user");
+        }
+
+        if (request.Seed.HasValue)
+        {
+            form.Add(new StringContent(request.Seed.Value.ToString(CultureInfo.InvariantCulture)), "seed");
+        }
+
+        if (request.Images is null)
+        {
+            return form;
+        }
+
+        for (int i = 0; i < request.Images.Count; i++)
+        {
+            var image = request.Images[i];
+            var resolved = ResolveImageUpload(image, i + 1);
+            var imageContent = new ByteArrayContent(resolved.Bytes);
+            imageContent.Headers.ContentType = new MediaTypeHeaderValue(resolved.ContentType);
+            form.Add(imageContent, "image", resolved.FileName);
+        }
+
+        return form;
+    }
+
+    private static ImageUpload ResolveImageUpload(LLMImageRequest image, int index)
+    {
+        if (image is null || string.IsNullOrWhiteSpace(image.Url))
+        {
+            throw new ArgumentException("Image inputs must include a file path or base64 data URL.", nameof(image));
+        }
+
+        if (image.IsBase64)
+        {
+            return ParseDataUrl(image.Url, index);
+        }
+
+        if (File.Exists(image.Url))
+        {
+            var bytes = File.ReadAllBytes(image.Url);
+            var extension = Path.GetExtension(image.Url);
+            var contentType = GetContentTypeFromExtension(extension);
+            var fileName = Path.GetFileName(image.Url);
+            return new ImageUpload(bytes, contentType, string.IsNullOrWhiteSpace(fileName) ? $"image_{index}{extension}" : fileName);
+        }
+
+        if (Uri.TryCreate(image.Url, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException("Image edits require file uploads. Provide a local file path or a base64 data URL.");
+        }
+
+        throw new FileNotFoundException($"Image file not found: {image.Url}", image.Url);
+    }
+
+    private static ImageUpload ParseDataUrl(string dataUrl, int index)
+    {
+        int commaIndex = dataUrl.IndexOf(',');
+        if (commaIndex < 0)
+        {
+            throw new FormatException("Invalid data URL for image input.");
+        }
+
+        string header = dataUrl.Substring(0, commaIndex);
+        string base64 = dataUrl.Substring(commaIndex + 1);
+
+        string contentType = "application/octet-stream";
+        if (header.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            int semiIndex = header.IndexOf(';');
+            if (semiIndex > "data:".Length)
+            {
+                contentType = header.Substring("data:".Length, semiIndex - "data:".Length);
+            }
+        }
+
+        var bytes = Convert.FromBase64String(LLMRequestImageHelper.StripBase64Prefix(base64));
+        var extension = GetExtensionFromContentType(contentType);
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            extension = "png";
+            contentType = "image/png";
+        }
+
+        string fileName = $"image_{index}.{extension}";
+        return new ImageUpload(bytes, contentType, fileName);
+    }
+
+    private static string GetContentTypeFromExtension(string? extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return "application/octet-stream";
+        }
+
+        string normalized = extension.StartsWith('.') ? extension.Substring(1) : extension;
+        normalized = normalized.ToLowerInvariant();
+
+        return normalized switch
+        {
+            "png" => "image/png",
+            "jpg" or "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            _ => "application/octet-stream"
+        };
+    }
+
+    private static string? GetExtensionFromContentType(string contentType)
+    {
+        return contentType.ToLowerInvariant() switch
+        {
+            "image/png" => "png",
+            "image/jpeg" => "jpg",
+            "image/webp" => "webp",
+            "image/gif" => "gif",
+            _ => null
+        };
+    }
+
+    private readonly record struct ImageUpload(byte[] Bytes, string ContentType, string FileName);
 
     protected override LLMResponse<T> TransformResponse<T>(string jsonResponse)
     {

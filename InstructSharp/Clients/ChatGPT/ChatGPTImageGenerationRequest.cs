@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using InstructSharp.Core;
 
 namespace InstructSharp.Clients.ChatGPT;
 
@@ -14,6 +16,7 @@ public class ChatGPTImageGenerationRequest
     public string? User { get; set; }
     public int ImageCount { get; set; } = 1;
     public int? Seed { get; set; }
+    public List<LLMImageRequest> Images { get; set; } = new();
 
     public void Validate()
     {
