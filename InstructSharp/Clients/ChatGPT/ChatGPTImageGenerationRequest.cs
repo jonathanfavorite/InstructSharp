@@ -29,5 +29,33 @@ public class ChatGPTImageGenerationRequest
         {
             throw new ArgumentOutOfRangeException(nameof(ImageCount), "ImageCount must be at least 1.");
         }
+
+        NormalizeTransparentBackground();
+    }
+
+    private void NormalizeTransparentBackground()
+    {
+        if (string.IsNullOrWhiteSpace(Background))
+        {
+            return;
+        }
+
+        if (!Background.Equals(ChatGPTImageParameters.Backgrounds.Transparent, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(OutputFormat))
+        {
+            OutputFormat = ChatGPTImageParameters.OutputFormats.Png;
+            return;
+        }
+
+        bool isPng = OutputFormat.Equals(ChatGPTImageParameters.OutputFormats.Png, StringComparison.OrdinalIgnoreCase);
+        bool isWebp = OutputFormat.Equals(ChatGPTImageParameters.OutputFormats.Webp, StringComparison.OrdinalIgnoreCase);
+        if (!isPng && !isWebp)
+        {
+            throw new ArgumentException("Transparent background requires output_format png or webp.", nameof(OutputFormat));
+        }
     }
 }

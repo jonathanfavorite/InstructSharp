@@ -5,8 +5,8 @@ using InstructSharp.Core;
 string apiKey = "YOUR-API-KEY";
 var client = new ChatGPTClient(apiKey);
 
-string imagePath = @"C:\some\image_path\image.jpg";
-string prompt = @"remake this image but in cartoon format";
+string imagePath = @"C:\test\instructsharp\example1.jpg";
+string prompt = @"extract the main subject and redraw it with clean cartoon styling on a transparent background";
 
 
 
@@ -22,6 +22,7 @@ var request = new ChatGPTImageGenerationRequest
     Size = ChatGPTImageParameters.Sizes.Landscape1536x1024,
     Quality = ChatGPTImageParameters.Quality.Low,
     OutputFormat = ChatGPTImageParameters.OutputFormats.Png,
+    Background = ChatGPTImageParameters.Backgrounds.Transparent, //////////// THIS IS FOR TRANSPARENT BACKGROUND RESULT
     ImageCount = 1,
     User = "image-generation-with-image-supplied",
     Images = new()
