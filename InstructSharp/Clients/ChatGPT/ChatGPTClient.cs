@@ -102,21 +102,18 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             payload["tools"] = tools;
         }
 
+        JsonNode? schema = null;
         if (typeof(T) != typeof(string))
         {
             // using a custom object
             string customJsonSchema = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
-            JsonNode schemaNode = JsonNode.Parse(customJsonSchema) ?? throw new InvalidCastException();
+            schema = JsonNode.Parse(customJsonSchema) ?? throw new InvalidCastException();
+        }
 
-            payload["text"] = new
-            {
-                format = new
-                {
-                    type = "json_schema",
-                    name = "mySchema",
-                    schema = schemaNode
-                }
-            };
+        var textPayload = BuildTextPayload(request, schema);
+        if (textPayload is not null)
+        {
+            payload["text"] = textPayload;
         }
 
         return payload;
@@ -186,24 +183,48 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         }
 
         // 5) **Structured output**: under text.format
+        JsonNode? schema = null;
         if (typeof(T) != typeof(string))
         {
             // Generate your JSON schema object
             string schemaJson = LLMSchemaHelper.GenerateJsonSchema(typeof(T));
-            var schemaNode = JsonNode.Parse(schemaJson)!;
+            schema = JsonNode.Parse(schemaJson)!;
+        }
 
-            payload["text"] = new
-            {
-                format = new
-                {
-                    type = "json_schema",
-                    name = "mySchema",
-                    schema = schemaNode
-                }
-            };
+        var textPayload = BuildTextPayload(request, schema);
+        if (textPayload is not null)
+        {
+            payload["text"] = textPayload;
         }
 
         return payload;
+    }
+
+    private static object? BuildTextPayload(ChatGPTRequest request, JsonNode? schemaNode)
+    {
+        bool hasVerbosity = !string.IsNullOrWhiteSpace(request.TextVerbosity);
+        if (schemaNode is null && !hasVerbosity)
+        {
+            return null;
+        }
+
+        var text = new Dictionary<string, object?>();
+        if (schemaNode is not null)
+        {
+            text["format"] = new
+            {
+                type = "json_schema",
+                name = "mySchema",
+                schema = schemaNode
+            };
+        }
+
+        if (hasVerbosity)
+        {
+            text["verbosity"] = request.TextVerbosity;
+        }
+
+        return text;
     }
 
     private static void ApplyCommonRequestOptions(Dictionary<string, object?> payload, ChatGPTRequest request)
@@ -214,9 +235,79 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             payload["reasoning"] = reasoningPayload;
         }
 
+        if (SupportsSamplingParameters(request))
+        {
+            payload["temperature"] = request.Temperature;
+
+            if (request.TopP.HasValue)
+            {
+                payload["top_p"] = request.TopP.Value;
+            }
+        }
+
+        if (request.MaxOutputTokens.HasValue)
+        {
+            payload["max_output_tokens"] = request.MaxOutputTokens.Value;
+        }
+
+        if (request.MaxToolCalls.HasValue)
+        {
+            payload["max_tool_calls"] = request.MaxToolCalls.Value;
+        }
+
+        if (request.ParallelToolCalls.HasValue)
+        {
+            payload["parallel_tool_calls"] = request.ParallelToolCalls.Value;
+        }
+
+        if (request.Store.HasValue)
+        {
+            payload["store"] = request.Store.Value;
+        }
+
+        if (request.Background.HasValue)
+        {
+            payload["background"] = request.Background.Value;
+        }
+
+        if (request.Metadata is { Count: > 0 })
+        {
+            payload["metadata"] = request.Metadata;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PromptCacheKey))
+        {
+            payload["prompt_cache_key"] = request.PromptCacheKey;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PromptCacheRetention))
+        {
+            payload["prompt_cache_retention"] = request.PromptCacheRetention;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SafetyIdentifier))
+        {
+            payload["safety_identifier"] = request.SafetyIdentifier;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ServiceTier))
+        {
+            payload["service_tier"] = request.ServiceTier;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ConversationId))
         {
             payload["conversation"] = request.ConversationId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PreviousResponseId))
+        {
+            if (!string.IsNullOrWhiteSpace(request.ConversationId))
+            {
+                throw new InvalidOperationException("PreviousResponseId cannot be set when ConversationId is provided.");
+            }
+
+            payload["previous_response_id"] = request.PreviousResponseId;
         }
 
         if (request.Include.Count > 0)
@@ -264,6 +355,24 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             string.Equals(normalized, "none", StringComparison.OrdinalIgnoreCase))
         {
             return normalized.ToLowerInvariant();
+        }
+
+        if (string.Equals(normalized, "allowed_tools", StringComparison.OrdinalIgnoreCase))
+        {
+            if (toolChoice.AllowedTools.Count == 0)
+            {
+                return null;
+            }
+
+            return new Dictionary<string, object?>
+            {
+                ["type"] = "allowed_tools",
+                ["mode"] = string.IsNullOrWhiteSpace(toolChoice.Mode) ? "auto" : toolChoice.Mode,
+                ["tools"] = toolChoice.AllowedTools.Select(tool => new Dictionary<string, object?>(tool.Parameters)
+                {
+                    ["type"] = tool.Type
+                }).ToList()
+            };
         }
 
         var payload = new Dictionary<string, object?>
@@ -323,7 +432,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         {
             tools.Add(new Dictionary<string, object?>
             {
-                ["type"] = "computer-use-preview"
+                ["type"] = "computer_use_preview"
             });
         }
 
@@ -362,6 +471,35 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             ["search_context_size"] = request.WebSearchContextSize,
             ["user_location"] = userLocation
         };
+    }
+
+    private static bool SupportsSamplingParameters(ChatGPTRequest request)
+    {
+        string model = (request.Model ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return true;
+        }
+
+        if (model.StartsWith("o1", StringComparison.Ordinal) ||
+            model.StartsWith("o3", StringComparison.Ordinal) ||
+            model.StartsWith("o4", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (model.StartsWith("gpt-5.2", StringComparison.Ordinal) ||
+            model.StartsWith("gpt-5.1", StringComparison.Ordinal))
+        {
+            return string.Equals(request.Reasoning?.Effort, "none", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (model.StartsWith("gpt-5", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     public override HttpRequestMessage BuildStreamingRequest<T>(ChatGPTRequest request)
@@ -1296,6 +1434,11 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
     private static string ExtractTextFromResponse(ChatGPTResponse response)
     {
+        if (!string.IsNullOrWhiteSpace(response.output_text))
+        {
+            return response.output_text;
+        }
+
         if (response.output is null)
         {
             return string.Empty;
@@ -1303,7 +1446,17 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
         foreach (var item in response.output)
         {
-            if (item?.content is null)
+            if (item is null)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.text))
+            {
+                return item.text;
+            }
+
+            if (item.content is null)
             {
                 continue;
             }
@@ -1335,17 +1488,21 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
                 continue;
             }
 
-            if (!string.Equals(item.type, "function_call", StringComparison.OrdinalIgnoreCase))
+            bool hasToolCall = item.function_call is not null || item.tool_call is not null;
+            if (!hasToolCall &&
+                !string.Equals(item.type, "function_call", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(item.type, "tool_call", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
             string? arguments = !string.IsNullOrWhiteSpace(item.arguments)
                 ? item.arguments
-                : item.function_call?.arguments;
+                : item.tool_call?.arguments ?? item.function_call?.arguments;
             string? name = !string.IsNullOrWhiteSpace(item.name)
                 ? item.name
-                : item.function_call?.name;
+                : item.tool_call?.name ?? item.function_call?.name;
+            string? output = item.tool_call?.output ?? item.function_call?.output;
 
             calls.Add(new ChatGPTToolCall
             {
@@ -1354,7 +1511,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
                 Type = item.type ?? "function_call",
                 Name = name,
                 ArgumentsJson = arguments,
-                Output = item.function_call?.output,
+                Output = output,
                 Status = item.status
             });
         }

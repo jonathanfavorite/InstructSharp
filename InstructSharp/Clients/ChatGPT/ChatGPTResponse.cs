@@ -2,8 +2,10 @@
 
 internal class ChatGPTResponse
 {
+    public string @object { get; set; }
     public string id { get; set; }
     public int created_at { get; set; }
+    public int? completed_at { get; set; }
     public string status { get; set; }
     public object error { get; set; }
     public object incomplete_details { get; set; }
@@ -16,7 +18,9 @@ internal class ChatGPTResponse
     public ChatGPTResponseReasoning reasoning { get; set; }
     public bool store { get; set; }
     public double temperature { get; set; }
+    public bool? background { get; set; }
     public ChatGPTResponseText text { get; set; }
+    public string output_text { get; set; }
     public string tool_choice { get; set; }
     public List<object> tools { get; set; }
     public double top_p { get; set; }
@@ -24,6 +28,7 @@ internal class ChatGPTResponse
     public ChatGPTResponseUsage usage { get; set; }
     public object user { get; set; }
     public ChatGPTResponseMetadata metadata { get; set; }
+    public string service_tier { get; set; }
 }
 
 internal class Content
@@ -54,10 +59,12 @@ internal class ChatGPTResponseOutput
     public string status { get; set; }
     public string role { get; set; }
     public List<Content> content { get; set; }
+    public string text { get; set; }
     public string call_id { get; set; }
     public string name { get; set; }
     public string arguments { get; set; }
     public ChatGPTResponseFunctionCall function_call { get; set; }
+    public ChatGPTResponseToolCall tool_call { get; set; }
 }
 
 internal class ChatGPTResponseOutputTokensDetails
@@ -88,6 +95,13 @@ internal class ChatGPTResponseUsage
 }
 
 internal class ChatGPTResponseFunctionCall
+{
+    public string name { get; set; }
+    public string arguments { get; set; }
+    public string output { get; set; }
+}
+
+internal class ChatGPTResponseToolCall
 {
     public string name { get; set; }
     public string arguments { get; set; }

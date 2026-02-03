@@ -1,7 +1,7 @@
 ﻿using InstructSharp.Clients.Gemini;
 
 // Replace this with your real API key or set the GOOGLE_API_KEY environment variable.
-string apiKey = "AIzaSyDQBSyeMt9DD9qKJAPbpCZ2MnVBIMUGHbE";
+string apiKey = "YOUR-API-KEY";
 var client = new GeminiClient(apiKey);
 
 string prompt = """

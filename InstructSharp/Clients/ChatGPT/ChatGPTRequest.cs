@@ -9,7 +9,20 @@ public class ChatGPTRequest : ILLMRequest
     public string Instructions { get; set; } = string.Empty;
     public string Input { get; set; } = string.Empty;
     public string? ConversationId { get; set; }
+    public string? PreviousResponseId { get; set; }
     public double Temperature { get; set; } = 0.7;
+    public double? TopP { get; set; }
+    public int? MaxOutputTokens { get; set; }
+    public int? MaxToolCalls { get; set; }
+    public bool? ParallelToolCalls { get; set; }
+    public bool? Store { get; set; }
+    public Dictionary<string, string>? Metadata { get; set; }
+    public bool? Background { get; set; }
+    public string? PromptCacheKey { get; set; }
+    public string? PromptCacheRetention { get; set; }
+    public string? SafetyIdentifier { get; set; }
+    public string? ServiceTier { get; set; }
+    public string? TextVerbosity { get; set; }
     public List<LLMImageRequest> Images { get; set; } = new();
     public bool ContainsImages => Images.Count > 0;
     public bool Stream { get; set; }
@@ -47,10 +60,13 @@ public class ChatGPTToolSpecification
 public class ChatGPTToolChoice
 {
     public const string WebSearchPreview = "web_search_preview";
+    public const string WebSearchPreview20250311 = "web_search_preview_2025_03_11";
     public const string WebSearch = "web_search";
 
     public string Type { get; set; } = "auto";
     public string? FunctionName { get; set; }
+    public string? Mode { get; set; }
+    public List<ChatGPTToolSpecification> AllowedTools { get; set; } = new();
 }
 
 public class ChatGPTReasoningOptions

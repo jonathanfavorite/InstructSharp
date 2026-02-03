@@ -37,7 +37,7 @@ Console.WriteLine();
 
 Dictionary<LLMProvider, ILLMRequest> requests = new()
 {
-    [LLMProvider.ChatGPT] = new ChatGPTRequest { Model = ChatGPTModels.GPT4o },
+    [LLMProvider.ChatGPT] = new ChatGPTRequest { Model = ChatGPTModels.GPT52 },
     [LLMProvider.Claude] = new ClaudeRequest { Model = ClaudeModels.ClaudeSonnet37_Latest },
     [LLMProvider.LLama] = new LLamaRequest { Model = LlamaModels.Llama4_Maverick_17B_128E_Instruct_FP8 },
     [LLMProvider.Gemini] = new GeminiRequest { Model = GeminiModels.Gemini25Flash },
