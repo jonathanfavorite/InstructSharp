@@ -25,8 +25,12 @@ public static class GeminiModels
     // Gemini 2.5 models
     public static readonly string Gemini25Pro = "gemini-2.5-pro";
     public static readonly string Gemini25Flash = "gemini-2.5-flash";
+    public static readonly string Gemini25FlashImage = "gemini-2.5-flash-image";
     public static readonly string GeminiLive25Flash = "gemini-live-2.5-flash";
     public static readonly string Gemini25FlashPreview0520 = "gemini-2.5-flash-preview-05-20";
     public static readonly string Gemini25FlashPreview0417 = "gemini-2.5-flash-preview-04-17";
     public static readonly string Gemini25FlashLitePreview = "gemini-2.5-flash-lite-preview-06-17";
+
+    // Gemini 3 image preview (Nano Banana Pro)
+    public static readonly string Gemini3ImagePreview = "gemini-3-pro-image-preview";
 }
