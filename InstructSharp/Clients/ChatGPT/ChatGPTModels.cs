@@ -32,6 +32,7 @@ public static class ChatGPTModels
     public static readonly string GPT4oSearchPreview = "gpt-4o-search-preview";
     public static readonly string GPT4oMiniSearchPreview = "gpt-4o-mini-search-preview";
     public static readonly string GPTImage1 = "gpt-image-1";
+    public static readonly string GPTImage2 = "gpt-image-2";
     public static readonly string GPTImage15 = "gpt-image-1.5";
     public static readonly string GPTImage1Mini = "gpt-image-1-mini";
     public static readonly string GPT4oAudioPreview = "gpt-4o-audio-preview";

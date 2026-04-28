@@ -1,19 +1,16 @@
 ﻿using InstructSharp.Clients.ChatGPT;
-using InstructSharp.Core;
+using InstructSharp.Utils;
 
 // Replace this with your real API key or set the OPENAI_API_KEY environment variable.
 string apiKey = "YOUR-API-KEY";
 var client = new ChatGPTClient(apiKey);
 
 string imagePath = @"C:\test\instructsharp\example1.jpg";
+string secondImagePath = @"C:\test\instructsharp\example2.png";
 string prompt = @"extract the main subject and redraw it with clean cartoon styling on a transparent background";
 
 
 
-
-string base64 = GetBase64OfImageFromPath(imagePath);
-string contentType = GetContentTypeFromPath(imagePath);
-string dataUrl = $"data:{contentType};base64,{base64}";
 
 var request = new ChatGPTImageGenerationRequest
 {
@@ -25,12 +22,7 @@ var request = new ChatGPTImageGenerationRequest
     Background = ChatGPTImageParameters.Backgrounds.Transparent, //////////// THIS IS FOR TRANSPARENT BACKGROUND RESULT
     ImageCount = 1,
     User = "image-generation-with-image-supplied",
-    Images = new()
-    {
-        new LLMImageRequest(dataUrl)
-        // You can also pass a local file path directly:
-        // new LLMImageRequest(imagePath)
-    }
+    Images = ImageRequest.FromFiles(new[] { imagePath, secondImagePath })
 };
 
 Console.WriteLine("Sending prompt to ChatGPT image API with an input image...");
@@ -69,27 +61,3 @@ for (int i = 0; i < result.Images.Count; i++)
 }
 
 Console.WriteLine("Done!");
-
-static string GetBase64OfImageFromPath(string imagePath)
-{
-    if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
-    {
-        throw new ArgumentException("Image path is invalid or file does not exist.", nameof(imagePath));
-    }
-
-    byte[] imageBytes = File.ReadAllBytes(imagePath);
-    return Convert.ToBase64String(imageBytes);
-}
-
-static string GetContentTypeFromPath(string imagePath)
-{
-    string extension = Path.GetExtension(imagePath).ToLowerInvariant();
-    return extension switch
-    {
-        ".png" => "image/png",
-        ".jpg" or ".jpeg" => "image/jpeg",
-        ".webp" => "image/webp",
-        ".gif" => "image/gif",
-        _ => "application/octet-stream"
-    };
-}

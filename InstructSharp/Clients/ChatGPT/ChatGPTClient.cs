@@ -1156,7 +1156,10 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
         request.Validate();
 
-        bool hasImages = request.Images is { Count: > 0 };
+        bool hasImages = request.Images is { Count: > 0 } ||
+                         request.ImageReferences is { Count: > 0 } ||
+                         request.Mask is not null ||
+                         request.MaskReference is not null;
         var endpoint = hasImages ? "images/edits" : "images/generations";
         using HttpContent content = hasImages
             ? BuildImageEditContent(request)
@@ -1168,6 +1171,11 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         {
             Console.WriteLine($"[ChatGPTImage] Error {(int)response.StatusCode} {response.StatusCode}: {jsonResponse}");
             response.EnsureSuccessStatusCode();
+        }
+
+        if (request.Stream == true)
+        {
+            return ParseStreamingImageResult(jsonResponse, request);
         }
 
         var parsed = JsonSerializer.Deserialize<ChatGPTImageGenerationResponse>(jsonResponse, _jsonOptions)
@@ -1188,6 +1196,10 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         {
             Model = request.Model,
             CreatedAt = createdAt,
+            Background = parsed.Background,
+            OutputFormat = parsed.OutputFormat,
+            Quality = parsed.Quality,
+            Size = parsed.Size,
             Images = images
         };
     }
@@ -1196,86 +1208,28 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
     {
         var payload = new Dictionary<string, object?>
         {
-            ["model"] = request.Model,
             ["prompt"] = request.Prompt,
-            ["size"] = request.Size,
-            ["quality"] = request.Quality,
-            ["n"] = request.ImageCount
+            ["model"] = request.Model
         };
 
-        if (!string.IsNullOrWhiteSpace(request.OutputFormat))
-        {
-            payload["output_format"] = request.OutputFormat;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Style))
-        {
-            payload["style"] = request.Style;
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Background))
-        {
-            payload["background"] = request.Background;
-        }
-
-        // 'negative_prompt' is not yet accepted by GPT-Image; reserved for future parity.
-
-        if (!string.IsNullOrWhiteSpace(request.User))
-        {
-            payload["user"] = request.User;
-        }
-
-        if (request.Seed.HasValue)
-        {
-            payload["seed"] = request.Seed;
-        }
+        AddCommonImageJsonParameters(payload, request);
 
         var body = JsonSerializer.Serialize(payload, _jsonOptions);
         return new StringContent(body, Encoding.UTF8, "application/json");
     }
 
-    private static HttpContent BuildImageEditContent(ChatGPTImageGenerationRequest request)
+    private HttpContent BuildImageEditContent(ChatGPTImageGenerationRequest request)
     {
+        if (request.ImageReferences.Count > 0 || request.MaskReference is not null)
+        {
+            return BuildImageEditJsonContent(request);
+        }
+
         var form = new MultipartFormDataContent();
 
         form.Add(new StringContent(request.Model), "model");
         form.Add(new StringContent(request.Prompt), "prompt");
-        form.Add(new StringContent(request.ImageCount.ToString(CultureInfo.InvariantCulture)), "n");
-
-        if (!string.IsNullOrWhiteSpace(request.Size))
-        {
-            form.Add(new StringContent(request.Size), "size");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Quality))
-        {
-            form.Add(new StringContent(request.Quality), "quality");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.OutputFormat))
-        {
-            form.Add(new StringContent(request.OutputFormat), "output_format");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Style))
-        {
-            form.Add(new StringContent(request.Style), "style");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.Background))
-        {
-            form.Add(new StringContent(request.Background), "background");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.User))
-        {
-            form.Add(new StringContent(request.User), "user");
-        }
-
-        if (request.Seed.HasValue)
-        {
-            form.Add(new StringContent(request.Seed.Value.ToString(CultureInfo.InvariantCulture)), "seed");
-        }
+        AddCommonImageFormParameters(form, request);
 
         if (request.Images is null)
         {
@@ -1288,10 +1242,237 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             var resolved = ResolveImageUpload(image, i + 1);
             var imageContent = new ByteArrayContent(resolved.Bytes);
             imageContent.Headers.ContentType = new MediaTypeHeaderValue(resolved.ContentType);
-            form.Add(imageContent, "image", resolved.FileName);
+            form.Add(imageContent, "image[]", resolved.FileName);
+        }
+
+        if (request.Mask is not null)
+        {
+            var resolved = ResolveImageUpload(request.Mask, 1);
+            var maskContent = new ByteArrayContent(resolved.Bytes);
+            maskContent.Headers.ContentType = new MediaTypeHeaderValue(resolved.ContentType);
+            form.Add(maskContent, "mask", resolved.FileName);
         }
 
         return form;
+    }
+
+    private HttpContent BuildImageEditJsonContent(ChatGPTImageGenerationRequest request)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["prompt"] = request.Prompt,
+            ["model"] = request.Model
+        };
+
+        AddCommonImageJsonParameters(payload, request);
+
+        var images = new List<Dictionary<string, string>>();
+        if (request.ImageReferences.Count > 0)
+        {
+            foreach (var image in request.ImageReferences)
+            {
+                images.Add(BuildImageReferencePayload(image));
+            }
+        }
+        else
+        {
+            for (int i = 0; i < request.Images.Count; i++)
+            {
+                var resolved = ResolveImageUpload(request.Images[i], i + 1);
+                images.Add(new Dictionary<string, string>
+                {
+                    ["image_url"] = BuildDataUrl(resolved)
+                });
+            }
+        }
+
+        payload["image"] = images;
+
+        if (request.MaskReference is not null)
+        {
+            payload["mask"] = BuildImageReferencePayload(request.MaskReference);
+        }
+        else if (request.Mask is not null)
+        {
+            payload["mask"] = BuildDataUrl(ResolveImageUpload(request.Mask, 1));
+        }
+
+        var body = JsonSerializer.Serialize(payload, _jsonOptions);
+        return new StringContent(body, Encoding.UTF8, "application/json");
+    }
+
+    private static void AddCommonImageJsonParameters(Dictionary<string, object?> payload, ChatGPTImageGenerationRequest request)
+    {
+        payload["n"] = request.ImageCount;
+
+        AddOptional(payload, "size", request.Size);
+        AddOptional(payload, "quality", request.Quality);
+        AddOptional(payload, "output_format", request.OutputFormat);
+        AddOptional(payload, "style", request.Style);
+        AddOptional(payload, "background", request.Background);
+        AddOptional(payload, "moderation", request.Moderation);
+        AddOptional(payload, "response_format", request.ResponseFormat);
+        AddOptional(payload, "input_fidelity", request.InputFidelity);
+        AddOptional(payload, "user", request.User);
+
+        if (request.OutputCompression.HasValue)
+        {
+            payload["output_compression"] = request.OutputCompression.Value;
+        }
+
+        if (request.PartialImages.HasValue)
+        {
+            payload["partial_images"] = request.PartialImages.Value;
+        }
+
+        if (request.Stream.HasValue)
+        {
+            payload["stream"] = request.Stream.Value;
+        }
+
+        if (request.Seed.HasValue)
+        {
+            payload["seed"] = request.Seed.Value;
+        }
+    }
+
+    private static void AddCommonImageFormParameters(MultipartFormDataContent form, ChatGPTImageGenerationRequest request)
+    {
+        form.Add(new StringContent(request.ImageCount.ToString(CultureInfo.InvariantCulture)), "n");
+
+        AddOptional(form, "size", request.Size);
+        AddOptional(form, "quality", request.Quality);
+        AddOptional(form, "output_format", request.OutputFormat);
+        AddOptional(form, "style", request.Style);
+        AddOptional(form, "background", request.Background);
+        AddOptional(form, "moderation", request.Moderation);
+        AddOptional(form, "response_format", request.ResponseFormat);
+        AddOptional(form, "input_fidelity", request.InputFidelity);
+        AddOptional(form, "user", request.User);
+
+        if (request.OutputCompression.HasValue)
+        {
+            form.Add(new StringContent(request.OutputCompression.Value.ToString(CultureInfo.InvariantCulture)), "output_compression");
+        }
+
+        if (request.PartialImages.HasValue)
+        {
+            form.Add(new StringContent(request.PartialImages.Value.ToString(CultureInfo.InvariantCulture)), "partial_images");
+        }
+
+        if (request.Stream.HasValue)
+        {
+            form.Add(new StringContent(request.Stream.Value ? "true" : "false"), "stream");
+        }
+
+        if (request.Seed.HasValue)
+        {
+            form.Add(new StringContent(request.Seed.Value.ToString(CultureInfo.InvariantCulture)), "seed");
+        }
+    }
+
+    private static void AddOptional(Dictionary<string, object?> payload, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            payload[name] = value;
+        }
+    }
+
+    private static void AddOptional(MultipartFormDataContent form, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            form.Add(new StringContent(value), name);
+        }
+    }
+
+    private static Dictionary<string, string> BuildImageReferencePayload(ChatGPTImageReference reference)
+    {
+        if (!string.IsNullOrWhiteSpace(reference.FileId))
+        {
+            return new Dictionary<string, string> { ["file_id"] = reference.FileId };
+        }
+
+        return new Dictionary<string, string> { ["image_url"] = reference.ImageUrl ?? string.Empty };
+    }
+
+    private static string BuildDataUrl(ImageUpload upload)
+    {
+        return $"data:{upload.ContentType};base64,{Convert.ToBase64String(upload.Bytes)}";
+    }
+
+    private static ChatGPTImageGenerationResult ParseStreamingImageResult(string responseBody, ChatGPTImageGenerationRequest request)
+    {
+        var images = new List<ChatGPTGeneratedImage>();
+        DateTimeOffset createdAt = DateTimeOffset.UtcNow;
+
+        using var reader = new StringReader(responseBody);
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            if (!line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var payload = line["data:".Length..].Trim();
+            if (payload.Length == 0 || payload == "[DONE]")
+            {
+                continue;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(payload);
+                var root = document.RootElement;
+
+                var type = TryGetTopLevelString(root, "type");
+                if (root.TryGetProperty("created", out var created) && created.ValueKind == JsonValueKind.Number && created.TryGetInt64(out long unixTime))
+                {
+                    createdAt = DateTimeOffset.FromUnixTimeSeconds(unixTime);
+                }
+
+                string? b64 = TryGetTopLevelString(root, "b64_json");
+                if (string.IsNullOrWhiteSpace(b64))
+                {
+                    b64 = TryGetTopLevelString(root, "partial_image_b64");
+                }
+
+                string? url = TryGetTopLevelString(root, "url");
+                if (string.IsNullOrWhiteSpace(b64) && string.IsNullOrWhiteSpace(url))
+                {
+                    continue;
+                }
+
+                int? partialImageIndex = null;
+                if (root.TryGetProperty("partial_image_index", out var partialIndex) &&
+                    partialIndex.ValueKind == JsonValueKind.Number &&
+                    partialIndex.TryGetInt32(out int parsedIndex))
+                {
+                    partialImageIndex = parsedIndex;
+                }
+
+                images.Add(new ChatGPTGeneratedImage
+                {
+                    Base64Data = b64,
+                    Url = url,
+                    PartialImageIndex = partialImageIndex,
+                    EventType = type
+                });
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+        }
+
+        return new ChatGPTImageGenerationResult
+        {
+            Model = request.Model,
+            CreatedAt = createdAt,
+            Images = images
+        };
     }
 
     private static ImageUpload ResolveImageUpload(LLMImageRequest image, int index)
