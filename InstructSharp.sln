@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "InstructSharp", "InstructSharp\InstructSharp.csproj", "{87BB711C-A4FE-4793-A87F-9D603DAC1EB0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InstructSharp.Tests", "InstructSharp.Tests\InstructSharp.Tests.csproj", "{40DDFE60-C40C-4AC2-9C90-F164BA64CD6D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{87BB711C-A4FE-4793-A87F-9D603DAC1EB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{87BB711C-A4FE-4793-A87F-9D603DAC1EB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{87BB711C-A4FE-4793-A87F-9D603DAC1EB0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40DDFE60-C40C-4AC2-9C90-F164BA64CD6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40DDFE60-C40C-4AC2-9C90-F164BA64CD6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40DDFE60-C40C-4AC2-9C90-F164BA64CD6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40DDFE60-C40C-4AC2-9C90-F164BA64CD6D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

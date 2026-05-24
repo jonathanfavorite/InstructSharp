@@ -215,7 +215,8 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             {
                 type = "json_schema",
                 name = "mySchema",
-                schema = schemaNode
+                schema = schemaNode,
+                strict = true
             };
         }
 
@@ -1608,8 +1609,26 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             return response;
         }
 
-        response.Result = JsonSerializer.Deserialize<T>(raw)
-            ?? throw new InvalidOperationException($"Failed to deserialize response into type {typeof(T).Name}");
+        if (string.Equals(casted.status, "incomplete", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"OpenAI response '{casted.id}' was incomplete before it could be deserialized into {typeof(T).Name}. " +
+                $"IncompleteDetails={FormatDiagnosticObject(casted.incomplete_details)}. RawOutputPreview='{TruncateForDiagnostics(raw)}'.");
+        }
+
+        try
+        {
+            response.Result = JsonSerializer.Deserialize<T>(raw)
+                ?? throw new InvalidOperationException($"Failed to deserialize response into type {typeof(T).Name}");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to deserialize OpenAI response '{casted.id}' into {typeof(T).Name}. " +
+                $"Status='{casted.status}'. RawOutputPreview='{TruncateForDiagnostics(raw)}'.",
+                ex);
+        }
+
         return response;
     }
 
@@ -1652,6 +1671,34 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         }
 
         return string.Empty;
+    }
+
+    private static string FormatDiagnosticObject(object? value)
+    {
+        if (value is null)
+        {
+            return "null";
+        }
+
+        try
+        {
+            return JsonSerializer.Serialize(value);
+        }
+        catch
+        {
+            return value.ToString() ?? "null";
+        }
+    }
+
+    private static string TruncateForDiagnostics(string? value, int maxLength = 500)
+    {
+        string singleLine = (value ?? string.Empty)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+
+        return singleLine.Length <= maxLength
+            ? singleLine
+            : string.Concat(singleLine.AsSpan(0, maxLength), "...");
     }
 
     private static IReadOnlyList<ChatGPTToolCall> ExtractToolCalls(ChatGPTResponse response)
