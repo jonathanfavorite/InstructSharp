@@ -25,6 +25,34 @@ public class ChatGPTClientStructuredOutputTests
     }
 
     [Fact]
+    public void TransformRequest_WhenInputItemsAreProvided_SerializesResponsesInputArray()
+    {
+        TestChatGPTClient client = new();
+
+        object payload = client.BuildRequest<string>(new ChatGPTRequest
+        {
+            Model = "gpt-5-mini",
+            Input = "ignored when input items are present",
+            InputItems =
+            [
+                ChatGPTInputItem.FunctionCallOutput("call_123", "CTA emitted to the client."),
+                ChatGPTInputItem.UserText("tell me about the process")
+            ]
+        });
+
+        JsonNode root = JsonNode.Parse(JsonSerializer.Serialize(payload))!;
+        JsonArray input = Assert.IsType<JsonArray>(root["input"]);
+
+        Assert.Equal("function_call_output", input[0]?["type"]?.GetValue<string>());
+        Assert.Equal("call_123", input[0]?["call_id"]?.GetValue<string>());
+        Assert.Equal("CTA emitted to the client.", input[0]?["output"]?.GetValue<string>());
+        Assert.Equal("completed", input[0]?["status"]?.GetValue<string>());
+        Assert.Equal("message", input[1]?["type"]?.GetValue<string>());
+        Assert.Equal("user", input[1]?["role"]?.GetValue<string>());
+        Assert.Equal("tell me about the process", input[1]?["content"]?.GetValue<string>());
+    }
+
+    [Fact]
     public void TransformResponse_WhenStructuredOutputIsIncomplete_ThrowsActionableException()
     {
         TestChatGPTClient client = new();

@@ -8,6 +8,7 @@ public class ChatGPTRequest : ILLMRequest
     public string Model { get; set; } = ChatGPTModels.GPT4o;
     public string Instructions { get; set; } = string.Empty;
     public string Input { get; set; } = string.Empty;
+    public List<ChatGPTInputItem> InputItems { get; set; } = new();
     public string? ConversationId { get; set; }
     public string? PreviousResponseId { get; set; }
     public double Temperature { get; set; } = 0.7;
@@ -48,6 +49,48 @@ public class ChatGPTRequest : ILLMRequest
 
         CustomTools.Add(tool);
         return this;
+    }
+}
+
+public class ChatGPTInputItem : Dictionary<string, object?>
+{
+    public static ChatGPTInputItem UserText(string text)
+    {
+        if (text is null)
+        {
+            throw new ArgumentNullException(nameof(text));
+        }
+
+        return new ChatGPTInputItem
+        {
+            ["type"] = "message",
+            ["role"] = "user",
+            ["content"] = text
+        };
+    }
+
+    public static ChatGPTInputItem FunctionCallOutput(
+        string callId,
+        string output,
+        string status = "completed")
+    {
+        if (string.IsNullOrWhiteSpace(callId))
+        {
+            throw new ArgumentException("A function call output requires a call id.", nameof(callId));
+        }
+
+        if (output is null)
+        {
+            throw new ArgumentNullException(nameof(output));
+        }
+
+        return new ChatGPTInputItem
+        {
+            ["type"] = "function_call_output",
+            ["call_id"] = callId,
+            ["output"] = output,
+            ["status"] = string.IsNullOrWhiteSpace(status) ? "completed" : status
+        };
     }
 }
 

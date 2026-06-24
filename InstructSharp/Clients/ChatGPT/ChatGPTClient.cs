@@ -90,7 +90,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         {
             ["model"] = request.Model,
             ["instructions"] = request.Instructions,
-            ["input"] = request.Input,
+            ["input"] = BuildInputPayload(request),
             ["stream"] = request.Stream
         };
 
@@ -139,32 +139,40 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         }
     };
 
-        // 2) User message content items
-        var userContentItems = new List<object>();
-        if (!string.IsNullOrEmpty(request.Input))
+        object input;
+        if (request.InputItems.Count > 0)
         {
-            userContentItems.Add(new
-            {
-                type = "input_text",
-                text = request.Input
-            });
+            input = request.InputItems;
         }
-        foreach (var img in request.Images)
+        else
         {
-            userContentItems.Add(new
+            // 2) User message content items
+            var userContentItems = new List<object>();
+            if (!string.IsNullOrEmpty(request.Input))
             {
-                type = "input_image",
-                image_url = img.Url,    // HTTP URL or base64 data-URI
-                detail = qualityDict[img.DetailRequired]
-            });
-        }
+                userContentItems.Add(new
+                {
+                    type = "input_text",
+                    text = request.Input
+                });
+            }
+            foreach (var img in request.Images)
+            {
+                userContentItems.Add(new
+                {
+                    type = "input_image",
+                    image_url = img.Url,    // HTTP URL or base64 data-URI
+                    detail = qualityDict[img.DetailRequired]
+                });
+            }
 
-        // 3) Wrap into the top-level input array
-        object[] input = new object[]
-        {
-        new { role = "system", content = systemContent },
-        new { role = "user",   content = userContentItems.ToArray() }
-        };
+            // 3) Wrap into the top-level input array
+            input = new object[]
+            {
+            new { role = "system", content = systemContent },
+            new { role = "user",   content = userContentItems.ToArray() }
+            };
+        }
 
         // 4) Base payload with model, input, temperature
         var payload = new Dictionary<string, object?>
@@ -199,6 +207,11 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
 
         return payload;
     }
+
+    private static object BuildInputPayload(ChatGPTRequest request) =>
+        request.InputItems.Count > 0
+            ? request.InputItems
+            : request.Input;
 
     private static object? BuildTextPayload(ChatGPTRequest request, JsonNode? schemaNode)
     {
@@ -639,7 +652,7 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             var toolCall = ExtractToolCall(root);
             var toolType = toolCall?.Type;
             var toolId = toolCall?.CallId ?? toolCall?.Id;
-            var textDelta = ExtractTextDelta(root);
+            var textDelta = IsToolCallEvent(eventType) ? null : ExtractTextDelta(root);
             var reasoningDelta = TryGetReasoningDelta(root);
             var activity = ResolveActivity(eventType, toolType, status);
 
@@ -736,6 +749,11 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
         if (root.TryGetProperty("tool_call", out var toolCallElem) && toolCallElem.ValueKind == JsonValueKind.Object)
         {
             return ParseToolCallElement(toolCallElem);
+        }
+
+        if (root.TryGetProperty("item", out var itemElem) && itemElem.ValueKind == JsonValueKind.Object)
+        {
+            return ParseToolCallElement(itemElem);
         }
 
         var functionCallArgs = TryParseFunctionCallArguments(root);
@@ -1001,8 +1019,12 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             ChatGPTStreamEventType.ResponseReasoningDone => ChatGPTStreamActivity.Thinking,
             ChatGPTStreamEventType.ResponseOutputTextDelta => ChatGPTStreamActivity.StreamingText,
             ChatGPTStreamEventType.ResponseOutputTextDone => ChatGPTStreamActivity.StreamingText,
-            ChatGPTStreamEventType.ResponseOutputItemAdded => ChatGPTStreamActivity.StreamingText,
-            ChatGPTStreamEventType.ResponseOutputItemDone => ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseOutputItemAdded => IsToolType(toolType)
+                ? ResolveToolActivity(toolType)
+                : ChatGPTStreamActivity.StreamingText,
+            ChatGPTStreamEventType.ResponseOutputItemDone => IsToolType(toolType)
+                ? ResolveToolActivity(toolType)
+                : ChatGPTStreamActivity.StreamingText,
             ChatGPTStreamEventType.ResponseContentPartAdded => ChatGPTStreamActivity.StreamingText,
             ChatGPTStreamEventType.ResponseContentPartDone => ChatGPTStreamActivity.StreamingText,
             ChatGPTStreamEventType.ResponseToolCallDelta => string.Equals(toolType, "web_search", StringComparison.OrdinalIgnoreCase)
@@ -1020,6 +1042,20 @@ public class ChatGPTClient : BaseLLMClient<ChatGPTRequest>
             _ => ChatGPTStreamActivity.Thinking
         };
     }
+
+    private static bool IsToolCallEvent(ChatGPTStreamEventType eventType) =>
+        eventType is ChatGPTStreamEventType.ResponseToolCallDelta
+            or ChatGPTStreamEventType.ResponseToolCallDone;
+
+    private static bool IsToolType(string? toolType) =>
+        !string.IsNullOrWhiteSpace(toolType) &&
+        !string.Equals(toolType, "message", StringComparison.OrdinalIgnoreCase);
+
+    private static ChatGPTStreamActivity ResolveToolActivity(string? toolType) =>
+        string.Equals(toolType, "web_search", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(toolType, "web_search_call", StringComparison.OrdinalIgnoreCase)
+            ? ChatGPTStreamActivity.WebSearch
+            : ChatGPTStreamActivity.ToolUse;
 
     private static string? TryGetReasoningDelta(JsonElement root)
     {
